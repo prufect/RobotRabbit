@@ -72,11 +72,11 @@ export function normalizeAnalysis(raw: RawAnalysis): NormalizedAnalysis {
 export function createMockAnalysis(_imageUrl: string): NormalizedAnalysis {
   return normalizeAnalysis({
     isIdentified: true,
-    category: 'hvac',
-    brand: 'Carrier',
-    modelNumber: 'Infinity 26',
-    messageToUser: 'I identified a Carrier Infinity 26 HVAC unit. I will look for nearby HVAC repair contractors now.',
-    contractorSearchQuery: 'Carrier Infinity 26 HVAC repair',
+    category: 'general',
+    brand: null,
+    modelNumber: null,
+    messageToUser: 'I can see a home maintenance issue. Let me find qualified professionals nearby.',
+    contractorSearchQuery: 'home repair maintenance contractor',
   });
 }
 
@@ -103,15 +103,19 @@ export async function analyzeRepairImage(
         {
           role: 'system',
           content: [
-            'You identify home maintenance equipment from photos.',
+            'You are an expert home services identification agent.',
+            'Analyze photos to determine what home service the user needs: appliance repair, painting, plumbing, electrical, roofing, carpentry, landscaping, cleaning, or other maintenance.',
+            'For the category field, use one of: "hvac", "electrical", "plumbing", "painting", "roofing", "carpentry", "landscaping", "cleaning", "appliance", "general", "other".',
             'Return only JSON with isIdentified, category, brand, modelNumber, messageToUser, contractorSearchQuery.',
+            'Only set brand and modelNumber when a specific appliance is visible.',
             'If the image is insufficient, set isIdentified false and use messageToUser as the next question.',
+            'Do NOT default to "hvac" — look at what is ACTUALLY in the image.',
           ].join(' '),
         },
         {
           role: 'user',
           content: [
-            { type: 'text', text: 'Analyze this repair photo.' },
+            { type: 'text', text: 'Analyze this photo. What home service or repair does the user need? Identify the issue category, and if a specific appliance is visible, identify the brand and model.' },
             { type: 'image_url', image_url: { url: imageUrl } },
           ],
         },
