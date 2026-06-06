@@ -656,8 +656,40 @@ export function createRepairApi(options = {}) {
     };
   }
 
-  async function analyzeVoice(transcript) {
-    return fallbackApi.analyzeVoice(transcript);
+  async function analyzeVoice(transcript, urgency = 'medium') {
+    const analysis = await fallbackApi.analyzeVoice(transcript);
+    if (!isBackendConfigured()) return analysis;
+
+    const user = await requireCurrentUser();
+    const requestId = cryptoImpl.randomUUID();
+    const { data: requests, error: insertError } = await insforge.database.from('repair_requests')
+      .insert([{
+        id: requestId,
+        user_id: user.id,
+        status: analysis.isIdentified === false ? 'needs_info' : 'identified',
+        category: analysis.category ?? 'general',
+        brand: analysis.brand ?? null,
+        urgency,
+        location_text: config.locationText,
+        image_url: `text://repair-requests/${requestId}`,
+        image_key: `text-requests/${requestId}`,
+        model_name: analysis.modelNumber ?? null,
+        diagnosis: analysis.diagnosis ?? transcript,
+        next_question: analysis.nextQuestion ?? null,
+      }])
+      .select();
+
+    if (insertError) throw insertError;
+
+    activeRequestId = requestId;
+    activeContractorIds = [];
+    activeContractors = [];
+
+    return {
+      ...analysis,
+      requestId,
+      request: Array.isArray(requests) ? requests[0] : null,
+    };
   }
 
   async function getConversations() {
