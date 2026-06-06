@@ -48,12 +48,12 @@ describe('frontend InsForge integration helper', () => {
     expect(() => execFileSync(process.execPath, ['--check', 'frontend/app.js'])).not.toThrow();
   });
 
-  it('auto-starts contractor outreach after presenting the top matches', () => {
+  it('waits for user to initiate negotiation after presenting the top matches', () => {
     const source = readFileSync('frontend/app.js', 'utf8');
 
-    expect(source).toContain("I'm contacting the top 3 now.");
-    expect(source).toContain('startNegotiation(autoNegotiationButton);');
-    expect(source).not.toContain('Should I negotiate rates and check their availability for you?');
+    expect(source).toContain('Should I negotiate rates and check their availability for you?');
+    expect(source).toContain('negotiate-all-btn');
+    expect(source).not.toContain('startNegotiation(autoNegotiationButton);');
   });
 
   it('requires frontend auth and exposes Google OAuth when InsForge is configured', () => {
