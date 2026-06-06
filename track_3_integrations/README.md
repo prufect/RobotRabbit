@@ -24,9 +24,32 @@ npm run test:smoke        # runs search -> notify end to end in mock mode
 | ------ | ---- | ------- |
 | `POST` | `/api/search-contractors` | Find contractors (SerpApi → mock fallback) |
 | `POST` | `/api/notify-contractors` | Outreach via WhatsApp → Telegram → mock |
-| `POST` | `/webhooks/twilio` | Receive contractor replies (CUJ 3) |
+| `POST` | `/webhooks/twilio` | Receive + parse contractor replies (CUJ 3) |
 | `GET`  | `/api/responses` | Poll captured replies (for Track 1 UI) |
+| `GET`  | `/api/best-quote` | Ranked quotes (cheapest first, soonest ETA breaks ties) |
+| `POST` | `/api/book` | Book a winner: message them + auto-decline the rest |
 | `GET`  | `/health` | Status + which integrations are live vs mock |
+
+### Quote engine + booking (CUJ 3)
+
+Contractor replies are parsed for **availability**, **price**, and **ETA**
+(`parseReply` in [src/quotes.js](src/quotes.js) — handles negations like
+"sorry, not available" and Spanish). Then:
+
+```bash
+curl -s localhost:3003/api/best-quote          # -> { best, ranked[] }
+curl -s localhost:3003/api/book -H 'content-type: application/json' \
+  -d '{"phone":"+14155550202"}'                # winner gets "you got the job",
+                                               # other bidders get a polite decline
+```
+
+### Message templates
+
+[src/templates.js](src/templates.js) builds outreach, reminder, winner, and
+decline messages — **channel-aware** (`whatsapp`/`telegram` use `*bold*`, `sms`
+goes plain), **category-aware** (HVAC/electrical/plumbing framing), and
+**bilingual** (`locale: 'en' | 'es'`). Pass `locale` in the notify/book bodies
+to switch language.
 
 ### Examples
 
@@ -71,7 +94,8 @@ contractor reply --> POST /webhooks/twilio --> GET /api/responses --> Track 1 UI
 | ---- | ---- |
 | `src/server.js` | Express app + routes + webhook |
 | `src/search.js` | SerpApi search with mock fallback |
-| `src/notify.js`  | WhatsApp → Telegram → mock send chain |
-| `src/templates.js` | Contractor message wording |
+| `src/notify.js`  | WhatsApp → Telegram → mock send chain (reusable `deliver`) |
+| `src/quotes.js`  | Parse + rank contractor replies (quote engine) |
+| `src/templates.js` | Channel/locale/category-aware message wording |
 | `src/mockData.js` | Category-aware fake contractors |
 | `src/config.js` | Env + live/mock detection |
