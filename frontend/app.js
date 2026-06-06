@@ -16,6 +16,7 @@ import {
   getCurrentUser,
   signIn,
   signUp,
+  signInWithGoogle,
   signOut,
   isAuthRequiredError,
   isBackendConfigured,
@@ -107,6 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let msgIdCounter = 0;
   let currentIssueContext = null;
   let currentUser = null;
+  let authModalOverlay = null;
   
   function generateId() {
     return `msg-${++msgIdCounter}`;
@@ -116,6 +118,28 @@ document.addEventListener('DOMContentLoaded', () => {
     chatWindow.addMessage({ id: 'typing', sender: 'agent', type: 'typing' });
     chatWindow.scrollToBottom();
     await wait(800 + Math.random() * 1000);
+  }
+
+  function isSignedIn() {
+    return Boolean(currentUser?.id);
+  }
+
+  function isLoginRequired() {
+    return isBackendConfigured() && !isSignedIn();
+  }
+
+  function closeAuthModal() {
+    authModalOverlay?.remove();
+    authModalOverlay = null;
+  }
+
+  function requireSignedIn() {
+    if (!isLoginRequired()) return true;
+    openAuthModal('sign-in', {
+      required: true,
+      message: 'Sign in to continue.',
+    });
+    return false;
   }
 
   function renderAuthState() {
@@ -135,7 +159,10 @@ document.addEventListener('DOMContentLoaded', () => {
     button.textContent = currentUser?.email ?? 'Sign in';
     button.addEventListener('click', async () => {
       if (!currentUser) {
-        openAuthModal('sign-in');
+        openAuthModal('sign-in', {
+          required: true,
+          message: 'Sign in to continue.',
+        });
         return;
       }
 
@@ -143,7 +170,10 @@ document.addEventListener('DOMContentLoaded', () => {
         await signOut();
         currentUser = null;
         renderAuthState();
-        chatWindow.addMessage({ id: generateId(), sender: 'agent', text: 'Signed out. I can still run the local demo flow.' });
+        openAuthModal('sign-in', {
+          required: true,
+          message: 'Signed out. Sign in to continue.',
+        });
       } catch (error) {
         chatWindow.addMessage({ id: generateId(), sender: 'agent', text: error.message || 'Sign out failed.' });
       }
@@ -151,7 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
     authStatus.appendChild(button);
   }
 
-  async function refreshAuthState() {
+  async function refreshAuthState({ requireLogin = false } = {}) {
     try {
       const session = await getCurrentUser();
       currentUser = session.user;
@@ -159,28 +189,50 @@ document.addEventListener('DOMContentLoaded', () => {
       currentUser = null;
     }
     renderAuthState();
+    if (currentUser) {
+      closeAuthModal();
+      return;
+    }
+    if (requireLogin && isBackendConfigured()) {
+      openAuthModal('sign-in', {
+        required: true,
+        message: 'Sign in to continue.',
+      });
+    }
   }
 
-  function openAuthModal(initialMode = 'sign-in') {
+  function openAuthModal(initialMode = 'sign-in', options = {}) {
     if (!isBackendConfigured()) return;
 
     let mode = initialMode;
+    const required = Boolean(options.required);
     const overlay = document.createElement('div');
-    overlay.className = 'auth-overlay';
+    closeAuthModal();
+    overlay.className = `auth-overlay ${required ? 'required' : ''}`;
+    authModalOverlay = overlay;
     appContainer.appendChild(overlay);
 
     function close() {
-      overlay.remove();
+      if (required && !isSignedIn()) return;
+      closeAuthModal();
     }
 
-    function render(message = '', isError = false) {
+    function render(message = options.message ?? '', isError = false) {
       const title = mode === 'sign-up' ? 'Create Account' : 'Sign In';
       overlay.innerHTML = `
         <form class="auth-card glass-solid">
           <div class="auth-card-header">
-            <h2>${title}</h2>
-            <button class="auth-close" type="button" aria-label="Close">&times;</button>
+            <div>
+              <h2>${title}</h2>
+              <p>${required ? 'Required for RobotRabbit.' : 'Connect to RobotRabbit.'}</p>
+            </div>
+            ${required ? '' : '<button class="auth-close" type="button" aria-label="Close">&times;</button>'}
           </div>
+          <button class="auth-google" type="button" data-provider="google">
+            <span class="auth-google-mark" aria-hidden="true">G</span>
+            Continue with Google
+          </button>
+          <div class="auth-divider"><span>or</span></div>
           <div class="auth-tabs">
             <button class="auth-tab ${mode === 'sign-in' ? 'active' : ''}" type="button" data-mode="sign-in">Sign In</button>
             <button class="auth-tab ${mode === 'sign-up' ? 'active' : ''}" type="button" data-mode="sign-up">Sign Up</button>
@@ -205,7 +257,18 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
 
       overlay.querySelector('.auth-message').textContent = message;
-      overlay.querySelector('.auth-close').addEventListener('click', close);
+      overlay.querySelector('.auth-close')?.addEventListener('click', close);
+      overlay.querySelector('[data-provider="google"]').addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.innerHTML = '<span class="auth-google-mark" aria-hidden="true">G</span>Connecting...';
+
+        try {
+          await signInWithGoogle({ redirectTo: `${window.location.origin}/` });
+        } catch (error) {
+          render(error.message || 'Google sign-in failed.', true);
+        }
+      });
       overlay.querySelectorAll('.auth-tab').forEach(tab => {
         tab.addEventListener('click', () => {
           mode = tab.dataset.mode;
@@ -253,6 +316,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   async function processUserInput(text, imageUrl = null, imageFile = null) {
+    if (!requireSignedIn()) return;
+
     const id = generateId();
     chatWindow.addMessage({ id, sender: 'user', text, imageUrl });
     textInput.value = '';
@@ -428,7 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  refreshAuthState();
+  refreshAuthState({ requireLogin: true });
   
   // Handle text input toggling send button
   function toggleSendVoiceBtn(hasText) {

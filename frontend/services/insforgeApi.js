@@ -162,6 +162,16 @@ export function createRepairApi(options = {}) {
     return data;
   }
 
+  async function signInWithGoogle({ redirectTo = globalThis.location?.origin ?? config.baseUrl } = {}) {
+    if (!isBackendConfigured()) throw new Error('InsForge is not configured for this frontend.');
+    const { data, error } = await insforge.auth.signInWithOAuth('google', {
+      redirectTo,
+      additionalParams: { prompt: 'select_account' },
+    });
+    if (error) throw error;
+    return data;
+  }
+
   async function signOut() {
     if (!isBackendConfigured()) return;
     const { error } = await insforge.auth.signOut();
@@ -316,6 +326,7 @@ export function createRepairApi(options = {}) {
     getCurrentUser,
     signIn,
     signUp,
+    signInWithGoogle,
     signOut,
     analyzeImage,
     analyzeVoice,
@@ -331,6 +342,7 @@ export const isBackendConfigured = defaultApi.isBackendConfigured;
 export const getCurrentUser = defaultApi.getCurrentUser;
 export const signIn = defaultApi.signIn;
 export const signUp = defaultApi.signUp;
+export const signInWithGoogle = defaultApi.signInWithGoogle;
 export const signOut = defaultApi.signOut;
 export const analyzeImage = defaultApi.analyzeImage;
 export const analyzeVoice = defaultApi.analyzeVoice;

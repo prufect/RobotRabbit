@@ -35,4 +35,16 @@ describe('frontend InsForge integration helper', () => {
     expect(source).toContain("./services/insforgeApi.js");
     expect(source).not.toContain("./services/mockApi.js");
   });
+
+  it('requires frontend auth and exposes Google OAuth when InsForge is configured', () => {
+    const appSource = readFileSync('frontend/app.js', 'utf8');
+    const serviceSource = readFileSync('frontend/services/insforgeApi.js', 'utf8');
+
+    expect(serviceSource).toContain("signInWithOAuth('google'");
+    expect(serviceSource).toContain('signInWithGoogle');
+    expect(appSource).toContain("refreshAuthState({ requireLogin: true })");
+    expect(appSource).toContain('if (!requireSignedIn()) return;');
+    expect(appSource).toContain('Continue with Google');
+    expect(appSource).toContain('required: true');
+  });
 });
