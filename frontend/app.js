@@ -619,7 +619,7 @@ document.addEventListener('DOMContentLoaded', () => {
     activity.updateStep(searchStep, { icon: '✅', text: `Found ${contractors.length} qualified pros`, status: 'done' });
     
     await wait(800);
-    const textMsg = "I found these highly-rated professionals nearby. I'm contacting the top 3 now.";
+    const textMsg = 'I found these highly-rated professionals nearby. Should I negotiate rates and check their availability for you?';
     chatWindow.addMessage({ 
       id: generateId(), 
       sender: 'agent', 
@@ -627,52 +627,63 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     saveMessage('assistant', textMsg).catch(console.error);
     
-    // Display cards
+    // Display contractor cards with individual negotiate buttons
+    const top3 = contractors.slice(0, 3);
     const cardsContainer = document.createElement('div');
     cardsContainer.style.margin = '12px 0';
-    createContractorCards(contractors.slice(0, 3), cardsContainer);
+    createContractorCards(top3, cardsContainer);
     chatWindow.addCustomElement(cardsContainer);
-    
-    // Add Negotiation Button
+
+    // Add "Negotiate with all 3" button below the cards
     const btnContainer = document.createElement('div');
-    btnContainer.innerHTML = `<button class="btn-primary fade-in" style="margin-top: 8px;">🤖 Negotiate with top 3</button>`;
+    btnContainer.style.cssText = 'display: flex; flex-direction: column; gap: 8px; margin-top: 8px;';
+    btnContainer.innerHTML = `<button class="btn-primary fade-in" id="negotiate-all-btn" style="width: 100%;">🤖 Negotiate with top ${top3.length}</button>`;
     chatWindow.addCustomElement(btnContainer);
+    chatWindow.scrollToBottom();
     
     let negotiationStarted = false;
-    const startNegotiation = async (btn, specificContractor = null) => {
+
+    const startNegotiation = async (contractorsToNegotiate) => {
       if (negotiationStarted) return;
       negotiationStarted = true;
-      btn.disabled = true;
-      btn.innerHTML = 'Negotiating...';
-      btn.style.opacity = '0.7';
-      const contractorsToNegotiate = specificContractor ? [specificContractor] : contractors;
+
+      // Disable all negotiate buttons
+      const allBtn = btnContainer.querySelector('#negotiate-all-btn');
+      if (allBtn) {
+        allBtn.disabled = true;
+        allBtn.innerHTML = 'Negotiating...';
+        allBtn.style.opacity = '0.7';
+      }
+
       await startNegotiationFlow(contractorsToNegotiate, urgency);
     };
 
-    btnContainer.querySelector('button').addEventListener('click', (e) => startNegotiation(e.target));
-
-    cardsContainer.addEventListener('contractor-selected', (e) => {
-      showContractorDetailModal(e.detail.contractor, () => {
-        const btn = btnContainer.querySelector('button');
-        startNegotiation(btn, e.detail.contractor);
-      });
+    // "Negotiate with all" button click
+    btnContainer.querySelector('#negotiate-all-btn').addEventListener('click', () => {
+      startNegotiation(top3);
     });
 
-    const autoNegotiationButton = btnContainer.querySelector('button');
-    startNegotiation(autoNegotiationButton);
+    // Clicking a card opens detail modal with "Start Negotiating" for that contractor
+    cardsContainer.addEventListener('contractor-selected', (e) => {
+      if (negotiationStarted) return;
+      showContractorDetailModal(e.detail.contractor, () => {
+        startNegotiation([e.detail.contractor]);
+      });
+    });
   }
   
   async function startNegotiationFlow(contractors, urgency) {
-    const activity = createAgentActivity(chatWindow);
-    chatWindow.scrollToBottom();
-    
-    const negMsg = `Negotiation has started with ${Math.min(3, contractors.length)} agents. If you want to see details, go to the Messages.`;
+    const contractorNames = contractors.slice(0, 3).map(c => c.name).join(', ');
+    const negMsg = `Starting negotiation with ${Math.min(3, contractors.length)} contractor${contractors.length > 1 ? 's' : ''}: ${contractorNames}. Follow the live progress in Messages.`;
     chatWindow.addMessage({ 
       id: generateId(), 
       sender: 'agent', 
       text: negMsg 
     });
     saveMessage('assistant', negMsg).catch(console.error);
+    
+    const activity = createAgentActivity(chatWindow);
+    chatWindow.scrollToBottom();
     
     const mcToggle = document.querySelector('.mc-toggle');
     if (mcToggle) {
@@ -709,6 +720,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     if (finalBooking) {
+      if (currentStepIdx !== null) {
+        activity.updateStep(currentStepIdx, { icon: '✅', status: 'done' });
+      }
       await wait(1000);
       
       // Calculate area averages to show Price Intel
@@ -723,7 +737,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       chatWindow.addCustomElement(priceIntelContainer);
       
-      const finalPriceMsg = `Great news! I successfully negotiated with ${finalBooking.contractor.name} and secured a price of $${finalBooking.negotiatedPrice}. They can be there on ${finalBooking.date} at ${finalBooking.time}. I've already verified their license and insurance.`;
+      const finalPriceMsg = `Great news! I successfully negotiated with ${finalBooking.contractor.name} and secured a price of $${finalBooking.negotiatedPrice}. They can be there on ${finalBooking.date} at ${finalBooking.time}. I've already verified their license and insurance. Would you like to confirm the booking?`;
       chatWindow.addMessage({ 
         id: generateId(), 
         sender: 'agent', 
