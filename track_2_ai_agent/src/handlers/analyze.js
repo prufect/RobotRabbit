@@ -91,7 +91,7 @@ export async function analyzeHandler(req, res, next) {
       requestId: req.id,
       message: 'Analyzing image',
       conversationId,
-      imageUrl,
+      imageUrl: imageUrl.startsWith('data:') ? `data:${imageUrl.substring(5, 30)}...(truncated)` : imageUrl,
     }));
 
     // ── Create session ───────────────────────────────────────────────────────
