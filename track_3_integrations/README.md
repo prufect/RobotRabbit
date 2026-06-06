@@ -28,7 +28,24 @@ npm run test:smoke        # runs search -> notify end to end in mock mode
 | `GET`  | `/api/responses` | Poll captured replies (for Track 1 UI) |
 | `GET`  | `/api/best-quote` | Ranked quotes (cheapest first, soonest ETA breaks ties) |
 | `POST` | `/api/book` | Book a winner: message them + auto-decline the rest |
+| `GET`  | `/api/conversations` | Message Center: all threads, grouped by contractor |
+| `GET`  | `/api/conversations/:phone` | Full message thread for one contractor |
+| `GET`  | `/messages.html` | **Live Message Center UI** (open in a browser) |
 | `GET`  | `/health` | Status + which integrations are live vs mock |
+
+### Message Center (Track 3 capture + Track 4 storage)
+
+Every message between the agent and a service provider — **both directions, any
+channel** — is recorded by [src/store.js](src/store.js): outbound sends (via
+`deliver`), inbound replies (via the webhook), bookings, and declines. Each row
+is tagged with the `requestId` you pass to `/api/notify-contractors`.
+
+- **See it live:** start the server and open `http://localhost:3003/messages.html`
+  — a WhatsApp-style chat UI that polls every 2s. Fire a notify / simulate a
+  reply and watch the thread appear.
+- **Storage:** the in-memory log always powers the UI. Set `DATABASE_URL` (Track 4
+  InsForge Postgres) and messages also persist to the `messages` table — see
+  [track_4_data_ops/sql/002_messages.sql](../track_4_data_ops/sql/002_messages.sql).
 
 ### Quote engine + booking (CUJ 3)
 
@@ -96,6 +113,8 @@ contractor reply --> POST /webhooks/twilio --> GET /api/responses --> Track 1 UI
 | `src/search.js` | SerpApi search with mock fallback |
 | `src/notify.js`  | WhatsApp → Telegram → mock send chain (reusable `deliver`) |
 | `src/quotes.js`  | Parse + rank contractor replies (quote engine) |
+| `src/store.js`   | Message Center store (in-memory + optional Postgres) |
 | `src/templates.js` | Channel/locale/category-aware message wording |
+| `public/messages.html` | Live Message Center chat UI |
 | `src/mockData.js` | Category-aware fake contractors |
 | `src/config.js` | Env + live/mock detection |

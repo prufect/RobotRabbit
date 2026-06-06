@@ -2,6 +2,7 @@ import axios from 'axios';
 import twilio from 'twilio';
 import { config, isTwilioLive, isTelegramLive } from './config.js';
 import { buildContractorMessage } from './templates.js';
+import { recordMessage } from './store.js';
 
 let twilioClient = null;
 function getTwilioClient() {
@@ -18,11 +19,22 @@ function getTwilioClient() {
  *
  * @param {{name?:string, phone:string, telegramChatId?:string}} contractor
  * @param {(channel:string)=>string} build
- * @param {{mediaUrl?:string}} [extra]
+ * @param {{mediaUrl?:string, requestId?:string, kind?:string}} [extra]
  * @returns {Promise<{name:string, phone:string, ok:boolean, channel:string, id?:string}>}
  */
 export async function deliver(contractor, build, extra = {}) {
   const base = { name: contractor.name, phone: contractor.phone };
+  // Capture every outbound message into the Message Center.
+  const log = (channel) =>
+    recordMessage({
+      requestId: extra.requestId,
+      phone: contractor.phone,
+      name: contractor.name,
+      direction: 'outbound',
+      channel,
+      kind: extra.kind || 'outreach',
+      body: build(channel),
+    });
 
   // 1) WhatsApp via Twilio
   if (isTwilioLive()) {
@@ -33,6 +45,7 @@ export async function deliver(contractor, build, extra = {}) {
         to: `whatsapp:${contractor.phone}`,
         ...(extra.mediaUrl ? { mediaUrl: [extra.mediaUrl] } : {}),
       });
+      log('whatsapp');
       return { ...base, ok: true, channel: 'whatsapp', id: res.sid };
     } catch (err) {
       console.error(`[notify] Twilio WhatsApp failed for ${contractor.phone}:`, err.message);
@@ -49,6 +62,7 @@ export async function deliver(contractor, build, extra = {}) {
           { chat_id: chatId, text: build('telegram'), parse_mode: 'Markdown' },
           { timeout: 8000 }
         );
+        log('telegram');
         return { ...base, ok: true, channel: 'telegram', id: String(data?.result?.message_id ?? '') };
       } catch (err) {
         console.error(`[notify] Telegram failed for ${contractor.name}:`, err.message);
@@ -61,6 +75,7 @@ export async function deliver(contractor, build, extra = {}) {
   console.log(`To: ${contractor.name || '(unknown)'} <${contractor.phone}>`);
   console.log(build('whatsapp'));
   console.log('--------------------------------------------------------\n');
+  log('mock');
   return { ...base, ok: true, channel: 'mock' };
 }
 
@@ -74,7 +89,7 @@ export function notifyContractor(contractor, issueDetails, opts = {}) {
   return deliver(
     contractor,
     (channel) => buildContractorMessage(contractor, issueDetails, { channel, locale: opts.locale }),
-    { mediaUrl: issueDetails.imageUrl }
+    { mediaUrl: issueDetails.imageUrl, requestId: opts.requestId, kind: 'outreach' }
   );
 }
 

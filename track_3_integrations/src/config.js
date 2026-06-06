@@ -7,6 +7,10 @@ export const config = {
   mockMode: bool(process.env.MOCK_MODE),
   defaultLocation: process.env.DEFAULT_LOCATION || 'San Francisco, CA',
 
+  // Track 4 Postgres (InsForge). When set, messages persist to the DB in
+  // addition to the always-on in-memory store that powers the live UI.
+  databaseUrl: process.env.DATABASE_URL || '',
+
   serperApiKey: process.env.SERPER_API_KEY || '',
 
   twilio: {
@@ -27,3 +31,4 @@ export const isTwilioLive = () =>
   !config.mockMode && Boolean(config.twilio.accountSid && config.twilio.authToken);
 export const isTelegramLive = () =>
   !config.mockMode && Boolean(config.telegram.botToken);
+export const isDbLive = () => Boolean(config.databaseUrl);

@@ -1,13 +1,20 @@
 import express from 'express';
-import { config, isSerperLive, isTwilioLive, isTelegramLive } from './config.js';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { config, isSerperLive, isTwilioLive, isTelegramLive, isDbLive } from './config.js';
 import { searchContractors } from './search.js';
 import { notifyContractors, deliver } from './notify.js';
 import { parseReply, rankQuotes } from './quotes.js';
 import { buildWinnerMessage, buildDeclineMessage } from './templates.js';
+import { recordMessage, getConversations, getConversation } from './store.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false })); // Twilio webhooks post urlencoded
+// Serve the live Message Center UI at /messages (and its assets).
+app.use(express.static(join(__dirname, '..', 'public')));
 
 // In-memory store of contractor replies, keyed by phone. Track 1 can poll
 // GET /api/responses to power CUJ 3 ("Book Now") without a DB dependency.
@@ -28,6 +35,7 @@ app.get('/health', (_req, res) => {
       serper: isSerperLive() ? 'live' : 'mock',
       twilio: isTwilioLive() ? 'live' : 'mock',
       telegram: isTelegramLive() ? 'live' : 'mock',
+      database: isDbLive() ? 'postgres' : 'in-memory',
     },
   });
 });
@@ -60,15 +68,17 @@ app.post('/api/notify-contractors', async (req, res) => {
     return res.status(400).json({ status: 'error', message: 'contractors[] is required' });
   }
   try {
+    // requestId ties all messages of one job together (Track 4 maintenance_requests.id).
+    const requestId = req.body.requestId || req.body.conversationId || null;
     // Remember who we contacted + the job, for later booking/decline messaging.
     lastIssue = issueDetails || {};
     for (const c of contractors) {
-      if (c.phone) contractorsByPhone.set(c.phone, { name: c.name, telegramChatId: c.telegramChatId });
+      if (c.phone) contractorsByPhone.set(c.phone, { name: c.name, telegramChatId: c.telegramChatId, requestId });
     }
     const { notifiedCount, results, errors } = await notifyContractors(
       contractors,
       issueDetails || {},
-      { locale: req.body.locale }
+      { locale: req.body.locale, requestId }
     );
     return res.json({ status: 'success', notifiedCount, results, errors });
   } catch (err) {
@@ -84,10 +94,11 @@ app.post('/webhooks/twilio', (req, res) => {
   const from = (req.body.From || '').replace('whatsapp:', '');
   const body = req.body.Body || '';
   const parsed = parseReply(body);
+  const known = contractorsByPhone.get(from) || {};
 
   const reply = {
     phone: from,
-    name: contractorsByPhone.get(from)?.name || null,
+    name: known.name || null,
     body,
     ...parsed, // available, quote, etaMinutes, etaText
     receivedAt: new Date().toISOString(),
@@ -96,6 +107,18 @@ app.post('/webhooks/twilio', (req, res) => {
   const idx = responses.findIndex((r) => r.phone === from);
   if (idx !== -1) responses.splice(idx, 1);
   responses.unshift(reply);
+
+  // Capture the inbound message into the Message Center.
+  const channel = (req.body.From || '').startsWith('whatsapp:') ? 'whatsapp' : 'sms';
+  recordMessage({
+    requestId: known.requestId || null,
+    phone: from,
+    name: known.name || null,
+    direction: 'inbound',
+    channel,
+    kind: 'reply',
+    body,
+  });
   console.log('[webhook] contractor reply:', reply);
 
   // Reply back to the contractor with a TwiML acknowledgement.
@@ -138,10 +161,17 @@ app.post('/api/book', async (req, res) => {
     .map((r) => ({ phone: r.phone, name: r.name, ...(contractorsByPhone.get(r.phone) || {}) }));
 
   try {
+    const reqId = contractorsByPhone.get(phone)?.requestId || null;
     const [winnerSend, ...loserSends] = await Promise.all([
-      deliver(winner, (channel) => buildWinnerMessage(winner, lastIssue, { channel, locale })),
+      deliver(winner, (channel) => buildWinnerMessage(winner, lastIssue, { channel, locale }), {
+        requestId: reqId,
+        kind: 'booking',
+      }),
       ...losers.map((l) =>
-        deliver(l, (channel) => buildDeclineMessage(l, lastIssue, { channel, locale }))
+        deliver(l, (channel) => buildDeclineMessage(l, lastIssue, { channel, locale }), {
+          requestId: contractorsByPhone.get(l.phone)?.requestId || null,
+          kind: 'decline',
+        })
       ),
     ]);
 
@@ -156,12 +186,26 @@ app.post('/api/book', async (req, res) => {
   }
 });
 
+// --- Message Center ---------------------------------------------------------
+// Full conversation thread between the agent and contractors (both directions,
+// all channels). Powers the message-center UI at /messages and Track 1.
+app.get('/api/conversations', (_req, res) => {
+  res.json({ status: 'success', conversations: getConversations() });
+});
+
+app.get('/api/conversations/:phone', (req, res) => {
+  const messages = getConversation(req.params.phone);
+  res.json({ status: 'success', phone: req.params.phone, messages });
+});
+
 app.listen(config.port, () => {
   console.log(`Track 3 Integrations service listening on :${config.port}`);
+  console.log(`Message Center UI -> http://localhost:${config.port}/messages.html`);
   console.log(
     `Modes -> serper:${isSerperLive() ? 'live' : 'mock'} ` +
       `twilio:${isTwilioLive() ? 'live' : 'mock'} ` +
-      `telegram:${isTelegramLive() ? 'live' : 'mock'}` +
+      `telegram:${isTelegramLive() ? 'live' : 'mock'} ` +
+      `db:${isDbLive() ? 'postgres' : 'in-memory'}` +
       (config.mockMode ? ' (MOCK_MODE forced)' : '')
   );
 });
