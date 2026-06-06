@@ -12,6 +12,8 @@ const INTEGRATIONS_URL = import.meta.env.VITE_INTEGRATIONS_URL || 'https://track
 // Generate a unique session ID for this page load
 const conversationId = 'session-' + Math.random().toString(36).substring(2, 9);
 
+let liveConversations = [];
+
 function asNumber(value, fallback) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
@@ -128,6 +130,21 @@ export async function* negotiateAndBook(contractors, userPreferences) {
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
   const topContractors = contractors.slice(0, 3);
 
+  const now = Date.now();
+  const t = (offsetMs) => new Date(now + offsetMs).toISOString();
+
+  liveConversations = topContractors.map((c, i) => ({
+    phone: c.phone || `+1555000000${i}`,
+    name: c.name,
+    requestId: 'live-session',
+    messageCount: 1,
+    lastMessageAt: t(0),
+    lastMessage: '🛠️ *New Job Request*...',
+    messages: [
+      { id: `m_out_${i}_1`, direction: 'outbound', channel: 'sms', kind: 'outreach', body: `🛠️ *New Job Request* — Please provide a quote for the requested repair.`, at: t(0) }
+    ]
+  }));
+
   // Step 1: Contacting overview
   yield { 
     step: 'contacting', 
@@ -154,6 +171,16 @@ export async function* negotiateAndBook(contractors, userPreferences) {
     const availabilityOptions = ['Today, 3:00 PM', 'Today, 5:00 PM', 'Tomorrow, 9:00 AM', 'Tomorrow, 11:00 AM', 'Today, 6:30 PM'];
     const avail = c.availability || availabilityOptions[Math.floor(Math.random() * availabilityOptions.length)];
 
+    const conv = liveConversations.find(x => x.name === c.name);
+    if (conv) {
+        const replyTime = new Date().toISOString();
+        const msg = { id: `m_in_${i}_2`, direction: 'inbound', channel: 'sms', kind: 'reply', body: `Yes available ${avail}, my rate is $${negotiatedPrice}`, at: replyTime };
+        conv.messages.push(msg);
+        conv.messageCount++;
+        conv.lastMessage = msg.body;
+        conv.lastMessageAt = replyTime;
+    }
+
     yield {
       step: 'responses',
       count: i + 1,
@@ -179,6 +206,23 @@ export async function* negotiateAndBook(contractors, userPreferences) {
   // Pick the best (lowest price)
   quotedContractors.sort((a, b) => a.negotiatedPrice - b.negotiatedPrice);
   const best = quotedContractors[0];
+
+  liveConversations.forEach((conv, i) => {
+      const accepted = conv.name === best.name;
+      const replyTime = new Date().toISOString();
+      const msg = { 
+        id: `m_out_${i}_3`, 
+        direction: 'outbound', 
+        channel: 'sms', 
+        kind: accepted ? 'booking' : 'rejection', 
+        body: accepted ? `Congrats! We'd like to book you.` : `Thanks for responding — homeowner went with another provider.`, 
+        at: replyTime 
+      };
+      conv.messages.push(msg);
+      conv.messageCount++;
+      conv.lastMessage = msg.body;
+      conv.lastMessageAt = replyTime;
+  });
 
   yield {
     step: 'comparing',
@@ -209,15 +253,22 @@ export async function* negotiateAndBook(contractors, userPreferences) {
  * Returns [] on any failure so the UI degrades gracefully.
  */
 export async function getConversations() {
+  let backendConvs = [];
   try {
     const response = await fetch(`${INTEGRATIONS_URL}/api/conversations`);
-    if (!response.ok) return [];
-    const data = await response.json();
-    return Array.isArray(data.conversations) ? data.conversations : [];
+    if (response.ok) {
+      const data = await response.json();
+      backendConvs = Array.isArray(data.conversations) ? data.conversations : [];
+    }
   } catch (err) {
     console.warn('getConversations failed:', err.message);
-    return [];
   }
+  
+  if (liveConversations && liveConversations.length > 0) {
+    return [...liveConversations, ...backendConvs];
+  }
+  
+  return backendConvs;
 }
 
 /**
