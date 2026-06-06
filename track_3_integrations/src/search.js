@@ -37,6 +37,7 @@ export async function searchContractors(query, location = config.defaultLocation
         name: p.title,
         phone: normalizePhone(p.phoneNumber),
         rating: p.rating ?? null,
+        reviewCount: p.ratingCount ?? null,
         address: p.address ?? null,
       }));
 

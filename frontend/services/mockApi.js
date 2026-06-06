@@ -148,20 +148,24 @@ export async function analyzeVoice(transcript) {
   let messageToUser = "I'm looking into that for you.";
   let query = 'home repair services';
   
-  if (text.includes('leak') || text.includes('water') || text.includes('sink') || text.includes('faucet') || text.includes('pipe') || text.includes('plumb')) {
+  if (/\b(leak|water|sink|faucet|pipe|plumb|plumber)\b/i.test(text)) {
     category = 'plumbing';
     messageToUser = "I understand you have a plumbing issue. Searching for top-rated plumbers who can fix this quickly...";
     query = 'plumber repair leak';
-    if (text.includes('everywhere') || text.includes('flooding') || text.includes('burst')) urgency = 'high';
-  } else if (text.includes('ac') || text.includes('air condition') || text.includes('heat') || text.includes('hvac')) {
+    if (/\b(everywhere|flooding|burst)\b/i.test(text)) urgency = 'high';
+  } else if (/\b(ac|air condition|air conditioning|heat|heater|hvac)\b/i.test(text)) {
     category = 'hvac';
     messageToUser = "Got it, an HVAC issue. Looking up certified climate control experts nearby...";
     query = 'HVAC AC repair technician';
-  } else if (text.includes('power') || text.includes('electric') || text.includes('outlet') || text.includes('switch') || text.includes('spark')) {
+  } else if (/\b(power|electric|electrician|outlet|switch|spark|wire)\b/i.test(text)) {
     category = 'electrical';
     messageToUser = "Electrical issues can be tricky. Finding licensed electricians in your area now...";
     query = 'licensed electrician repair';
-    if (text.includes('spark') || text.includes('smoke') || text.includes('fire')) urgency = 'high';
+    if (/\b(spark|smoke|fire)\b/i.test(text)) urgency = 'high';
+  } else if (/\b(paint|painting|painter)\b/i.test(text)) {
+    category = 'painting';
+    messageToUser = "A fresh coat of paint sounds great. Looking for top-rated painters nearby...";
+    query = 'house painter contractor';
   }
   
   return {

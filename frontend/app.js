@@ -19,6 +19,8 @@ import {
   getCurrentUser,
   signIn,
   signUp,
+  verifyEmail,
+  resendVerificationEmail,
   signInWithGoogle,
   signOut,
   isAuthRequiredError,
@@ -29,6 +31,14 @@ const logoUrl = new URL('./assets/logo.png', import.meta.url).href;
 
 // Fallback delay utility
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+function escapeAttribute(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   const appContainer = document.getElementById('app');
@@ -74,10 +84,24 @@ document.addEventListener('DOMContentLoaded', () => {
   bottomBar.className = 'bottom-bar glass-solid';
   bottomBarWrapper.appendChild(bottomBar);
   
+  // Dragbar for toggling
+  const dragbarContainer = document.createElement('div');
+  dragbarContainer.className = 'dragbar-container';
+  dragbarContainer.innerHTML = `<div class="dragbar-pill"></div>`;
+  bottomBar.appendChild(dragbarContainer);
+
+  const bottomBarContent = document.createElement('div');
+  bottomBarContent.className = 'bottom-bar-content';
+  bottomBar.appendChild(bottomBarContent);
+
+  dragbarContainer.addEventListener('click', () => {
+    bottomBar.classList.toggle('collapsed');
+  });
+
   // 2. Initialize Components
   
   const chatWindow = createChatWindow(mainContent);
-  const urgencyToggle = createUrgencyToggle(bottomBar);
+  const urgencyToggle = createUrgencyToggle(bottomBarContent);
   const bookingConfirm = createBookingConfirm(appContainer);
   
   // Setup Input Row in Bottom Bar
@@ -109,7 +133,7 @@ document.addEventListener('DOMContentLoaded', () => {
   inputRow.appendChild(textInput);
   inputRow.appendChild(sendBtn);
   inputRow.appendChild(voiceContainer);
-  bottomBar.appendChild(inputRow);
+  bottomBarContent.appendChild(inputRow);
   
   // Create Onboarding Splash
   createOnboardingSplash(appContainer);
@@ -216,6 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!isBackendConfigured()) return;
 
     let mode = initialMode;
+    let verificationEmail = options.email ?? '';
     const required = Boolean(options.required);
     const overlay = document.createElement('div');
     closeAuthModal();
@@ -229,16 +254,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function render(message = options.message ?? '', isError = false) {
-      const title = mode === 'sign-up' ? 'Create Account' : 'Sign In';
-      overlay.innerHTML = `
-        <form class="auth-card glass-solid">
-          <div class="auth-card-header">
-            <div>
-              <h2>${title}</h2>
-              <p>${required ? 'Required for RobotRabbit.' : 'Connect to RobotRabbit.'}</p>
-            </div>
-            ${required ? '' : '<button class="auth-close" type="button" aria-label="Close">&times;</button>'}
-          </div>
+      const isVerificationMode = mode === 'verify-email';
+      const title = isVerificationMode ? 'Verify Email' : mode === 'sign-up' ? 'Create Account' : 'Sign In';
+      const subtitle = isVerificationMode
+        ? 'Enter the 6-digit code from your email.'
+        : required ? 'Required for RobotRabbit.' : 'Connect to RobotRabbit.';
+      const controls = isVerificationMode ? `
+          <label class="auth-field">
+            <span>Email</span>
+            <input name="email" type="email" autocomplete="email" value="${escapeAttribute(verificationEmail)}" required>
+          </label>
+          <label class="auth-field">
+            <span>Verification code</span>
+            <input name="otp" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
+          </label>
+          <div class="auth-message ${isError ? 'error' : ''}"></div>
+          <button class="btn-primary" type="submit">Verify Email</button>
+          <button class="auth-link-button" type="button" data-action="resend-code">Resend code</button>
+          <button class="auth-link-button muted" type="button" data-mode="sign-in">Back to sign in</button>
+        ` : `
           <button class="auth-google" type="button" data-provider="google">
             <span class="auth-google-mark" aria-hidden="true">G</span>
             Continue with Google
@@ -254,7 +288,7 @@ document.addEventListener('DOMContentLoaded', () => {
           </label>
           <label class="auth-field">
             <span>Password</span>
-            <input name="password" type="password" autocomplete="${mode === 'sign-up' ? 'new-password' : 'current-password'}" minlength="8" required>
+            <input name="password" type="password" autocomplete="${mode === 'sign-up' ? 'new-password' : 'current-password'}" ${mode === 'sign-up' ? 'minlength="6"' : ''} required>
           </label>
           ${mode === 'sign-up' ? `
             <label class="auth-field">
@@ -264,12 +298,23 @@ document.addEventListener('DOMContentLoaded', () => {
           ` : ''}
           <div class="auth-message ${isError ? 'error' : ''}"></div>
           <button class="btn-primary" type="submit">${title}</button>
+        `;
+      overlay.innerHTML = `
+        <form class="auth-card glass-solid">
+          <div class="auth-card-header">
+            <div>
+              <h2>${title}</h2>
+              <p>${subtitle}</p>
+            </div>
+            ${required ? '' : '<button class="auth-close" type="button" aria-label="Close">&times;</button>'}
+          </div>
+          ${controls}
         </form>
       `;
 
       overlay.querySelector('.auth-message').textContent = message;
       overlay.querySelector('.auth-close')?.addEventListener('click', close);
-      overlay.querySelector('[data-provider="google"]').addEventListener('click', async (event) => {
+      overlay.querySelector('[data-provider="google"]')?.addEventListener('click', async (event) => {
         const button = event.currentTarget;
         button.disabled = true;
         button.innerHTML = '<span class="auth-google-mark" aria-hidden="true">G</span>Connecting...';
@@ -280,11 +325,35 @@ document.addEventListener('DOMContentLoaded', () => {
           render(error.message || 'Google sign-in failed.', true);
         }
       });
-      overlay.querySelectorAll('.auth-tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-          mode = tab.dataset.mode;
+      overlay.querySelectorAll('[data-mode]').forEach(control => {
+        control.addEventListener('click', () => {
+          mode = control.dataset.mode;
           render();
         });
+      });
+      overlay.querySelector('[data-action="resend-code"]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const form = button.closest('form');
+        const email = String(new FormData(form).get('email') ?? '').trim();
+
+        if (!email) {
+          render('Enter your email so I know where to resend the code.', true);
+          return;
+        }
+
+        verificationEmail = email;
+        button.disabled = true;
+        button.textContent = 'Sending...';
+
+        try {
+          await resendVerificationEmail({
+            email,
+            redirectTo: `${window.location.origin}/`,
+          });
+          render('A new code is on its way.', false);
+        } catch (error) {
+          render(error.message || 'Could not resend the verification code.', true);
+        }
       });
       overlay.querySelector('form').addEventListener('submit', async (event) => {
         event.preventDefault();
@@ -292,12 +361,26 @@ document.addEventListener('DOMContentLoaded', () => {
         const submit = form.querySelector('button[type="submit"]');
         const formData = new FormData(form);
         submit.disabled = true;
-        submit.textContent = mode === 'sign-up' ? 'Creating...' : 'Signing in...';
+        submit.textContent = mode === 'sign-up' ? 'Creating...' : mode === 'verify-email' ? 'Verifying...' : 'Signing in...';
 
         try {
           const email = String(formData.get('email') ?? '').trim();
           const password = String(formData.get('password') ?? '');
           const name = String(formData.get('name') ?? '').trim();
+
+          if (mode === 'verify-email') {
+            const otp = String(formData.get('otp') ?? '').trim();
+            const data = await verifyEmail({ email, otp });
+            currentUser = data?.user ?? currentUser;
+            await refreshAuthState();
+            if (!currentUser && data?.user) {
+              currentUser = data.user;
+              renderAuthState();
+            }
+            close();
+            chatWindow.addMessage({ id: generateId(), sender: 'agent', text: 'Email verified and signed in. I can now save your RobotRabbit requests in InsForge.' });
+            return;
+          }
 
           if (mode === 'sign-up') {
             const data = await signUp({
@@ -307,7 +390,9 @@ document.addEventListener('DOMContentLoaded', () => {
               redirectTo: `${window.location.origin}/`,
             });
             if (data?.requireEmailVerification) {
-              render('Check your email to verify this account, then sign in.', false);
+              verificationEmail = email;
+              mode = 'verify-email';
+              render('Enter the 6-digit code we sent to your email.', false);
               return;
             }
           } else {

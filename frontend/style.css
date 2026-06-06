@@ -855,6 +855,15 @@ body {
   background: rgba(255, 255, 255, 0.4);
 }
 
+.booking-actions {
+  display: grid;
+  gap: 12px;
+}
+
+.booking-calendar-link {
+  text-decoration: none;
+}
+
 /* ==========================================================================
    13b. Auth
    ========================================================================== */
@@ -1035,6 +1044,31 @@ body {
 
 .auth-message.error {
   color: var(--accent-secondary);
+}
+
+.auth-link-button {
+  width: 100%;
+  margin-top: 10px;
+  border: none;
+  background: transparent;
+  color: var(--accent-primary);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.auth-link-button:hover {
+  color: var(--text-primary);
+}
+
+.auth-link-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.auth-link-button.muted {
+  color: var(--text-secondary);
 }
 
 /* ==========================================================================
