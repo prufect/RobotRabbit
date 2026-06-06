@@ -25,20 +25,18 @@ export function createContractorCard(contractor, options = {}) {
           <span>🔧 ${contractor.yearsExperience}yr exp</span>
         </div>
       </div>
-      ${contractor.reviewCount > 0 ? `
+      ${contractor.rating > 0 ? `
       <div class="contractor-rating">
         <span class="contractor-star">${starsHtml}</span>
         <span>${contractor.rating}</span>
-        <span style="color:var(--text-muted);font-size:0.75rem;">(${contractor.reviewCount})</span>
+        ${contractor.reviewCount > 0 ? `<span style="color:var(--text-muted);font-size:0.75rem;">(${contractor.reviewCount})</span>` : ''}
       </div>
       ` : ''}
     </div>
     <div class="contractor-verified">${badgesHtml}</div>
     <div class="contractor-price-section">
       <div class="contractor-price">
-        <span class="price-original">$${contractor.originalPrice}</span>
-        <span class="price-negotiated">$${contractor.negotiatedPrice}</span>
-        <span class="price-saved">Save $${saved} (${savedPercent}%)</span>
+        <span class="price-negotiated" style="font-size:1.1rem;">Est. $${contractor.negotiatedPrice}–$${contractor.originalPrice}</span>
       </div>
       <div style="font-size:0.8rem;color:var(--text-secondary);text-align:right;">
         <div style="font-weight:500;">${contractor.availability}</div>
