@@ -33,6 +33,12 @@ create table if not exists public.contractor_quotes (
   price numeric,
   availability text,
   raw_message text not null,
+  approval_status text not null default 'pending' check (
+    approval_status in ('pending', 'approved', 'rejected')
+  ),
+  approved_at timestamptz,
+  rejected_at timestamptz,
+  approval_metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -48,7 +54,9 @@ create table if not exists public.repair_requests (
       'searching',
       'notifying',
       'negotiating',
+      'pending_approval',
       'completed',
+      'booked',
       'failed'
     )
   ),
@@ -107,9 +115,12 @@ create table if not exists public.contractor_notifications (
   contractor_id uuid references public.contractors(id) on delete set null,
   channel text not null check (channel in ('whatsapp', 'telegram', 'mock')),
   destination text,
-  status text not null check (status in ('pending', 'sent', 'failed', 'mock_sent')),
+  status text not null check (status in ('pending', 'sent', 'failed', 'mock_sent', 'replied')),
   message text not null,
   provider_message_id text,
+  reply_received_at timestamptz,
+  reply_message_id text,
+  reply_body text,
   last_error text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -129,6 +140,8 @@ create index if not exists idx_contractor_notifications_request
   on public.contractor_notifications(request_id, created_at);
 create index if not exists idx_contractor_quotes_request
   on public.contractor_quotes(request_id, created_at);
+create index if not exists idx_contractor_quotes_approval
+  on public.contractor_quotes(request_id, approval_status, created_at desc);
 
 drop trigger if exists profiles_set_updated_at on public.profiles;
 create trigger profiles_set_updated_at

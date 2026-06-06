@@ -42,8 +42,17 @@ describe('AgentRabbit backend migration', () => {
     }
 
     expect(sql).toContain("status text not null default 'uploaded'");
+    expect(sql).toContain("'pending_approval'");
+    expect(sql).toContain("'booked'");
     expect(sql).toContain("job_type text not null");
     expect(sql).toContain("raw_message text not null");
     expect(sql).toContain("best_quote_id uuid references public.contractor_quotes(id)");
+    expect(sql).toContain("approval_status text not null default 'pending'");
+    expect(sql).toContain("approved_at timestamptz");
+    expect(sql).toContain("rejected_at timestamptz");
+    expect(sql).toContain("idx_contractor_quotes_approval");
+    expect(sql).toContain("reply_received_at timestamptz");
+    expect(sql).toContain("reply_message_id text");
+    expect(sql).toContain("reply_body text");
   });
 });
