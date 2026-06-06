@@ -21,15 +21,17 @@ export function createContractorCard(contractor, options = {}) {
       <div>
         <div class="contractor-name">${contractor.name}</div>
         <div class="contractor-meta">
-          <span>📍 ${contractor.distance} mi</span>
+          ${contractor.distance > 0 ? `<span>📍 ${contractor.distance} mi</span>` : ''}
           <span>🔧 ${contractor.yearsExperience}yr exp</span>
         </div>
       </div>
+      ${contractor.reviewCount > 0 ? `
       <div class="contractor-rating">
         <span class="contractor-star">${starsHtml}</span>
         <span>${contractor.rating}</span>
         <span style="color:var(--text-muted);font-size:0.75rem;">(${contractor.reviewCount})</span>
       </div>
+      ` : ''}
     </div>
     <div class="contractor-verified">${badgesHtml}</div>
     <div class="contractor-price-section">

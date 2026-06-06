@@ -21,10 +21,10 @@ function normalizeContractor(contractor, index = 0) {
   const metadata = contractor?.metadata && typeof contractor.metadata === 'object'
     ? contractor.metadata
     : {};
-  const rating = asNumber(contractor.rating ?? metadata.rating, 4.8 - (index * 0.1));
+  const rating = asNumber(contractor.rating ?? metadata.rating, 0);
   const originalPrice = asNumber(
     contractor.originalPrice ?? metadata.originalPrice ?? metadata.estimated_price,
-    185 - (index * 15),
+    185 - (index * 15), // Keeping price mocked as requested because Google Places does not return prices.
   );
   const negotiatedPrice = asNumber(
     contractor.negotiatedPrice ?? metadata.negotiatedPrice,
@@ -37,8 +37,8 @@ function normalizeContractor(contractor, index = 0) {
     name: contractor.name ?? `Repair Pro ${index + 1}`,
     phone: contractor.phone ?? null,
     rating: Math.max(0, Math.min(5, rating)),
-    reviewCount: asNumber(contractor.reviewCount ?? metadata.reviewCount, 140 - (index * 24)),
-    distance: asNumber(contractor.distance ?? metadata.distance, 2.1 + (index * 1.4)),
+    reviewCount: asNumber(contractor.reviewCount ?? metadata.reviewCount, 0),
+    distance: asNumber(contractor.distance ?? metadata.distance, 0),
     verified: contractor.verified ?? {
       licensed: true,
       insured: index < 2,

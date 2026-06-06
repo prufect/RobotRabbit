@@ -23,10 +23,12 @@ export function showContractorDetailModal(contractor, onNegotiate) {
       
       <div style="margin-bottom: 20px;">
         <h2 style="margin: 0 0 8px 0; font-size: 1.4rem; color: var(--text-primary);">${contractor.name}</h2>
+        ${contractor.reviewCount > 0 ? `
         <div style="display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--text-secondary);">
           <span style="color: #F59E0B;">${starsHtml}</span>
           <span>${contractor.rating} (${contractor.reviewCount} reviews)</span>
         </div>
+        ` : ''}
       </div>
       
       <div style="margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 6px;">
@@ -50,10 +52,12 @@ export function showContractorDetailModal(contractor, onNegotiate) {
           <span style="font-size: 1.2rem;">📜</span>
           <span style="color: var(--text-secondary);">License: <strong>${license}</strong></span>
         </div>
+        ${contractor.distance > 0 ? `
         <div style="display: flex; align-items: center; gap: 12px;">
           <span style="font-size: 1.2rem;">📍</span>
           <span style="color: var(--text-secondary);">${contractor.address || `${contractor.distance} miles away`}</span>
         </div>
+        ` : ''}
       </div>
       
       <button class="btn-primary" id="btn-start-negotiating" style="width: 100%; padding: 12px; font-size: 1rem; border-radius: 12px; border: none; background: var(--accent-primary); color: white; font-weight: 600; cursor: pointer;">
