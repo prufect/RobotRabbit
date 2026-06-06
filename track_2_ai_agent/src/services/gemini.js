@@ -115,7 +115,7 @@ export async function analyzeImage(imageUrl) {
           role: 'user',
           parts: [
             { inlineData: { mimeType, data: base64 } },
-            { text: 'Analyze this photo. What home service or repair does the user need? Identify the issue category, and if a specific appliance is visible, identify the brand and model. Return the result as JSON.' },
+            { text: 'Analyze this photo. What home service or repair does the user need? Identify the issue category, and if a specific appliance is visible, identify the brand and model. Look carefully at the actual content of the image — do not assume it is an HVAC unit. Return the result as JSON.' },
           ],
         },
       ],

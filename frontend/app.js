@@ -25,6 +25,8 @@ import {
   signOut,
   isAuthRequiredError,
   isBackendConfigured,
+  loadRecentSession,
+  saveMessage,
 } from './services/insforgeApi.js';
 
 const logoUrl = new URL('./assets/logo.png', import.meta.url).href;
@@ -288,6 +290,29 @@ document.addEventListener('DOMContentLoaded', () => {
     authStatus.appendChild(button);
   }
 
+  async function loadPersistedMessages() {
+    try {
+      const session = await loadRecentSession();
+      if (session && session.messages && session.messages.length > 0) {
+        chatWindow.clear();
+        session.messages.forEach(msg => {
+          if (msg.role === 'system') return;
+          chatWindow.addMessage({
+            id: msg.id,
+            sender: msg.role === 'user' ? 'user' : 'agent',
+            text: msg.content,
+            imageUrl: msg.metadata?.imageUrl || null
+          });
+        });
+        chatWindow.scrollToBottom();
+      } else if (session === null) {
+        chatWindow.clear();
+      }
+    } catch (e) {
+      console.error("Failed to load past session:", e);
+    }
+  }
+
   async function refreshAuthState({ requireLogin = false } = {}) {
     try {
       const session = await getCurrentUser();
@@ -298,6 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
     renderAuthState();
     if (currentUser) {
       closeAuthModal();
+      await loadPersistedMessages();
       return;
     }
     if (requireLogin && isBackendConfigured()) {
@@ -489,6 +515,7 @@ document.addEventListener('DOMContentLoaded', () => {
     lastInputMode = isVoice ? 'voice' : 'text';
     const id = generateId();
     chatWindow.addMessage({ id, sender: 'user', text, imageUrl });
+    saveMessage('user', text, imageUrl ? 'image' : 'text', imageUrl).catch(console.error);
     textInput.value = '';
     textInput.blur();
     toggleSendVoiceBtn(false);
@@ -528,7 +555,14 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     
-    activity.updateStep(step1, { icon: '✅', text: `Identified: ${result.brand} ${result.modelNumber}`, status: 'done' });
+    const identifiedLabel = result.brand && result.modelNumber
+      ? `${result.brand} ${result.modelNumber}`
+      : result.brand
+        ? result.brand
+        : result.category
+          ? `${result.category.charAt(0).toUpperCase() + result.category.slice(1)} issue`
+          : 'Issue identified';
+    activity.updateStep(step1, { icon: '✅', text: `Identified: ${identifiedLabel}`, status: 'done' });
     const step2 = activity.addStep({ icon: '🔍', text: 'Searching local professionals...', status: 'active' });
     chatWindow.addMessage({ id: generateId(), sender: 'agent', text: result.messageToUser });
     chatWindow.scrollToBottom();
@@ -547,6 +581,7 @@ document.addEventListener('DOMContentLoaded', () => {
     activity.updateStep(step1, { icon: '✅', text: `Category: ${result.category}`, status: 'done' });
     const step2 = activity.addStep({ icon: '🔍', text: 'Searching local professionals...', status: 'active' });
     chatWindow.addMessage({ id: generateId(), sender: 'agent', text: result.messageToUser });
+    saveMessage('assistant', result.messageToUser, 'analysis').catch(console.error);
     chatWindow.scrollToBottom();
     
     currentIssueContext = result;
@@ -568,11 +603,13 @@ document.addEventListener('DOMContentLoaded', () => {
     activity.updateStep(searchStep, { icon: '✅', text: `Found ${contractors.length} qualified pros`, status: 'done' });
     
     await wait(800);
+    const textMsg = "I found these highly-rated professionals nearby. I'm contacting the top 3 now.";
     chatWindow.addMessage({ 
       id: generateId(), 
       sender: 'agent', 
-      text: "I found these highly-rated professionals nearby. I'm contacting the top 3 now." 
+      text: textMsg 
     });
+    saveMessage('assistant', textMsg).catch(console.error);
     
     // Display cards
     const cardsContainer = document.createElement('div');
@@ -585,7 +622,6 @@ document.addEventListener('DOMContentLoaded', () => {
     btnContainer.innerHTML = `<button class="btn-primary fade-in" style="margin-top: 8px;">🤖 Negotiate with top 3</button>`;
     chatWindow.addCustomElement(btnContainer);
     
-    const startNegotiation = async (btn) => {
     let negotiationStarted = false;
     const startNegotiation = async (btn, specificContractor = null) => {
       if (negotiationStarted) return;
@@ -593,7 +629,8 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.disabled = true;
       btn.innerHTML = 'Negotiating...';
       btn.style.opacity = '0.7';
-      await startNegotiationFlow(contractors, urgency);
+      const contractorsToNegotiate = specificContractor ? [specificContractor] : contractors;
+      await startNegotiationFlow(contractorsToNegotiate, urgency);
     };
 
     btnContainer.querySelector('button').addEventListener('click', (e) => startNegotiation(e.target));
@@ -601,7 +638,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cardsContainer.addEventListener('contractor-selected', (e) => {
       showContractorDetailModal(e.detail.contractor, () => {
         const btn = btnContainer.querySelector('button');
-        startNegotiation(btn);
+        startNegotiation(btn, e.detail.contractor);
       });
     });
 
@@ -613,6 +650,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const activity = createAgentActivity(mainContent);
     chatWindow.scrollToBottom();
     
+    const negMsg = `Negotiation has started with ${Math.min(3, contractors.length)} agents. If you want to see details, go to the Messages.`;
+    chatWindow.addMessage({ 
+      id: generateId(), 
+      sender: 'agent', 
+      text: negMsg 
+    });
+    saveMessage('assistant', negMsg).catch(console.error);
+    
+    const mcToggle = document.querySelector('.mc-toggle');
+    if (mcToggle) {
+      mcToggle.style.animation = 'none';
+      setTimeout(() => mcToggle.style.animation = 'pulse 1s 3', 50);
+    }
     const gen = negotiateAndBook(contractors, { urgency });
     let currentStepIdx = null;
     let finalBooking = null;
@@ -657,11 +707,13 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       chatWindow.addCustomElement(priceIntelContainer);
       
+      const finalPriceMsg = `Great news! I successfully negotiated with ${finalBooking.contractor.name} and secured a price of $${finalBooking.negotiatedPrice}. They can be there on ${finalBooking.date} at ${finalBooking.time}. I've already verified their license and insurance.`;
       chatWindow.addMessage({ 
         id: generateId(), 
         sender: 'agent', 
-        text: `Great news! I successfully negotiated with ${finalBooking.contractor.name} and secured a price of $${finalBooking.negotiatedPrice}. They can be there on ${finalBooking.date} at ${finalBooking.time}. I've already verified their license and insurance.` 
+        text: finalPriceMsg 
       });
+      saveMessage('assistant', finalPriceMsg).catch(console.error);
       
       await wait(1000);
       bookingConfirm.show(finalBooking);
