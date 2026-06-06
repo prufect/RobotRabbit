@@ -48,12 +48,13 @@ describe('frontend InsForge integration helper', () => {
     expect(() => execFileSync(process.execPath, ['--check', 'frontend/app.js'])).not.toThrow();
   });
 
-  it('auto-starts contractor outreach after presenting the top matches', () => {
+  it('waits for the homeowner to select one contractor before outreach starts', () => {
     const source = readFileSync('frontend/app.js', 'utf8');
 
-    expect(source).toContain("I'm contacting the top 3 now.");
-    expect(source).toContain('startNegotiation(autoNegotiationButton);');
-    expect(source).not.toContain('Should I negotiate rates and check their availability for you?');
+    expect(source).toContain('Choose one contractor to contact.');
+    expect(source).toContain('Select a contractor above');
+    expect(source).not.toContain('startNegotiation(autoNegotiationButton);');
+    expect(source).not.toContain("I'm contacting the top 3 now.");
   });
 
   it('requires frontend auth and exposes Google OAuth when InsForge is configured', () => {
@@ -372,6 +373,113 @@ describe('frontend InsForge integration helper', () => {
     expect(invoke).toHaveBeenCalledWith('search-contractors', {
       body: { requestId: 'text-request-1' },
     });
+  });
+
+  it('notifies only the selected contractor and includes test contractor details for Telegram demo routing', async () => {
+    const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
+    const { createRepairApi } = await import(serviceUrl);
+    const insertSelect = vi.fn().mockResolvedValue({ data: [{ id: 'selected-request-1' }], error: null });
+    const insert = vi.fn().mockReturnValue({ select: insertSelect });
+    const from = vi.fn().mockImplementation(() => ({ insert }));
+    const invoke = vi.fn().mockImplementation((slug) => {
+      if (slug === 'search-contractors') {
+        return Promise.resolve({
+          data: {
+            status: 'success',
+            results: [
+              { id: 'contractor-1', name: 'Bay Area Paint Pros', category: 'painting' },
+              { id: 'contractor-2', name: 'City Paint Crew', category: 'painting' },
+            ],
+            contractorIds: ['contractor-1', 'contractor-2'],
+          },
+          error: null,
+        });
+      }
+
+      if (slug === 'notify-contractors') {
+        return Promise.resolve({ data: { status: 'success', notifiedCount: 1 }, error: null });
+      }
+
+      if (slug === 'status') {
+        return Promise.resolve({
+          data: {
+            status: 'success',
+            session: {
+              requestId: 'selected-request-1',
+              quotes: [],
+              notifications: [],
+              messages: [],
+              jobs: [],
+            },
+          },
+          error: null,
+        });
+      }
+
+      return Promise.resolve({ data: {}, error: null });
+    });
+
+    const api = createRepairApi({
+      config: {
+        baseUrl: 'https://pzv974n7.us-east.insforge.app',
+        anonKey: 'anon',
+        useMock: false,
+        locationText: 'San Francisco, CA',
+      },
+      cryptoImpl: { randomUUID: () => 'selected-request-1' },
+      fallbackApi: {
+        analyzeVoice: vi.fn().mockResolvedValue({
+          isIdentified: true,
+          category: 'painting',
+          brand: null,
+          modelNumber: null,
+          diagnosis: 'Interior painting request.',
+          messageToUser: 'I can help find painters.',
+          contractorSearchQuery: 'painting repair',
+        }),
+      },
+      insforge: {
+        auth: {
+          getCurrentUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null }),
+        },
+        database: { from },
+        functions: { invoke },
+      },
+    });
+
+    await api.analyzeVoice('Find me painters', 'high');
+    const contractors = await api.searchContractors('painting repair', 'San Francisco, CA');
+    const selected = contractors.find((contractor: { id?: string }) => contractor.id === 'test-contractor');
+    expect(selected).toBeTruthy();
+
+    const states = [];
+    for await (const state of api.negotiateAndBook([selected], {
+      urgency: 'high',
+      replyPollAttempts: 1,
+      replyPollIntervalMs: 0,
+    })) {
+      states.push(state);
+    }
+
+    expect(invoke).toHaveBeenCalledWith('notify-contractors', {
+      body: {
+        requestId: 'selected-request-1',
+        contractorIds: ['test-contractor'],
+        selectedContractor: expect.objectContaining({
+          id: 'test-contractor',
+          name: 'Testing Contractor',
+        }),
+      },
+    });
+    expect(invoke).not.toHaveBeenCalledWith('notify-contractors', {
+      body: expect.objectContaining({
+        contractorIds: ['contractor-1', 'contractor-2'],
+      }),
+    });
+    expect(states[0]).toEqual(expect.objectContaining({
+      step: 'contacting',
+      count: 1,
+    }));
   });
 
   it('optimizes camera PNGs and direct-uploads without hitting the presigned S3 path', async () => {

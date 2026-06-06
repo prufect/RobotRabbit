@@ -44,6 +44,22 @@ describe('InsForge edge function sources', () => {
     expect(source).toContain("approvalStatus: 'pending'");
   });
 
+  it('does not schedule contractor notifications during search', () => {
+    const source = readFileSync('functions/search-contractors.ts', 'utf8');
+
+    expect(source).not.toContain("job_type: 'notify_contractors'");
+    expect(source).not.toContain("payload: { contractorIds }");
+  });
+
+  it('requires exactly one selected contractor for outbound notifications', () => {
+    const source = readFileSync('functions/notify-contractors.ts', 'utf8');
+
+    expect(source).toContain('selectedContractor');
+    expect(source).toContain('Select exactly one contractor to notify');
+    expect(source).toContain('contractorIds.length !== 1');
+    expect(source).toContain('selectedContractorId');
+  });
+
   it('marks selected contractor quotes as approved when booking is finalized', () => {
     const source = readFileSync('functions/finalize-booking.ts', 'utf8');
 

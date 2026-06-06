@@ -23,16 +23,34 @@ export default async function telegramWebhook(req: Request): Promise<Response> {
     const telegramMessageId = update.message.message_id != null
       ? String(update.message.message_id)
       : null;
+    const replyToMessageId = update.message.reply_to_message?.message_id != null
+      ? String(update.message.reply_to_message.message_id)
+      : null;
 
     const client = createAdminClient({ baseUrl: edgeBaseUrl(), apiKey: adminApiKey() });
 
-    const { data: notifications, error: notifError } = await client.database
-      .from('contractor_notifications')
-      .select('id, request_id, user_id, contractor_id, message')
-      .eq('channel', 'telegram')
-      .eq('destination', chatId)
-      .order('created_at', { ascending: false })
-      .limit(1);
+    let { data: notifications, error: notifError } = replyToMessageId
+      ? await client.database
+        .from('contractor_notifications')
+        .select('id, request_id, user_id, contractor_id, message')
+        .eq('channel', 'telegram')
+        .eq('destination', chatId)
+        .eq('provider_message_id', replyToMessageId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      : { data: null, error: null };
+
+    if (!notifications || notifications.length === 0) {
+      const fallback = await client.database
+        .from('contractor_notifications')
+        .select('id, request_id, user_id, contractor_id, message')
+        .eq('channel', 'telegram')
+        .eq('destination', chatId)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      notifications = fallback.data;
+      notifError = fallback.error;
+    }
 
     if (notifError || !notifications || notifications.length === 0) {
       return jsonResponse({ error: 'No matching request found for this chat' }, { status: 404 });

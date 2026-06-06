@@ -619,7 +619,7 @@ document.addEventListener('DOMContentLoaded', () => {
     activity.updateStep(searchStep, { icon: '✅', text: `Found ${contractors.length} qualified pros`, status: 'done' });
     
     await wait(800);
-    const textMsg = "I found these highly-rated professionals nearby. I'm contacting the top 3 now.";
+    const textMsg = 'I found these highly-rated professionals nearby. Choose one contractor to contact.';
     chatWindow.addMessage({ 
       id: generateId(), 
       sender: 'agent', 
@@ -635,38 +635,43 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Add Negotiation Button
     const btnContainer = document.createElement('div');
-    btnContainer.innerHTML = `<button class="btn-primary fade-in" style="margin-top: 8px;">🤖 Negotiate with top 3</button>`;
+    btnContainer.innerHTML = `<button class="btn-primary fade-in" style="margin-top: 8px;" disabled>Select a contractor above</button>`;
     chatWindow.addCustomElement(btnContainer);
     
     let negotiationStarted = false;
+    let selectedContractor = null;
     const startNegotiation = async (btn, specificContractor = null) => {
       if (negotiationStarted) return;
+      if (!specificContractor) return;
       negotiationStarted = true;
       btn.disabled = true;
-      btn.innerHTML = 'Negotiating...';
+      btn.innerHTML = `Contacting ${specificContractor.name}...`;
       btn.style.opacity = '0.7';
-      const contractorsToNegotiate = specificContractor ? [specificContractor] : contractors;
-      await startNegotiationFlow(contractorsToNegotiate, urgency);
+      await startNegotiationFlow([specificContractor], urgency);
     };
 
-    btnContainer.querySelector('button').addEventListener('click', (e) => startNegotiation(e.target));
+    btnContainer.querySelector('button').addEventListener('click', (e) => {
+      startNegotiation(e.target, selectedContractor);
+    });
 
     cardsContainer.addEventListener('contractor-selected', (e) => {
+      selectedContractor = e.detail.contractor;
+      const btn = btnContainer.querySelector('button');
+      btn.disabled = false;
+      btn.innerHTML = `Contact ${selectedContractor.name}`;
+      btn.style.opacity = '1';
       showContractorDetailModal(e.detail.contractor, () => {
-        const btn = btnContainer.querySelector('button');
         startNegotiation(btn, e.detail.contractor);
       });
     });
-
-    const autoNegotiationButton = btnContainer.querySelector('button');
-    startNegotiation(autoNegotiationButton);
   }
   
   async function startNegotiationFlow(contractors, urgency) {
     const activity = createAgentActivity(chatWindow);
     chatWindow.scrollToBottom();
     
-    const negMsg = `Negotiation has started with ${Math.min(3, contractors.length)} agents. If you want to see details, go to the Messages.`;
+    const contractorName = contractors[0]?.name ?? 'the selected contractor';
+    const negMsg = `Negotiation has started with ${contractorName}. Replies will show in Messages.`;
     chatWindow.addMessage({ 
       id: generateId(), 
       sender: 'agent', 

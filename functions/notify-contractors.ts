@@ -19,8 +19,45 @@ import type { Contractor, NotificationInsert, RepairRequest } from './_shared/ty
 
 type NotifyBody = {
   requestId?: unknown;
+  contractorId?: unknown;
   contractorIds?: unknown;
+  selectedContractor?: unknown;
 };
+
+type NotifiableContractor = {
+  id: string | null;
+  name: string;
+  phone: string | null;
+};
+
+function selectedContractorIds(body: NotifyBody): string[] {
+  const rawIds = typeof body.contractorId === 'string'
+    ? [body.contractorId]
+    : Array.isArray(body.contractorIds)
+      ? body.contractorIds
+      : [];
+
+  return [...new Set(rawIds.filter((id): id is string => typeof id === 'string' && id.length > 0))];
+}
+
+function selectedContractorFromBody(value: unknown, selectedContractorId: string): NotifiableContractor | null {
+  if (!value || typeof value !== 'object') return null;
+
+  const record = value as Record<string, unknown>;
+  const id = typeof record.id === 'string' ? record.id : null;
+  if (id && id !== selectedContractorId) return null;
+
+  const name = typeof record.name === 'string' && record.name.trim()
+    ? record.name.trim()
+    : null;
+  if (!name) return null;
+
+  return {
+    id: null,
+    name,
+    phone: typeof record.phone === 'string' && record.phone.trim() ? record.phone.trim() : null,
+  };
+}
 
 export default async function notifyContractors(req: Request): Promise<Response> {
   const methodResponse = requirePost(req);
@@ -36,9 +73,11 @@ export default async function notifyContractors(req: Request): Promise<Response>
     if (typeof body.requestId !== 'string' || !body.requestId) {
       return jsonResponse({ error: 'requestId is required' }, { status: 400 });
     }
-    if (!Array.isArray(body.contractorIds)) {
-      return jsonResponse({ error: 'contractorIds must be an array' }, { status: 400 });
+    const contractorIds = selectedContractorIds(body);
+    if (contractorIds.length !== 1) {
+      return jsonResponse({ error: 'Select exactly one contractor to notify' }, { status: 400 });
     }
+    const selectedContractorId = contractorIds[0];
 
     let userId: string | null = null;
     if (!internal) {
@@ -62,12 +101,25 @@ export default async function notifyContractors(req: Request): Promise<Response>
       return jsonResponse({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const contractorIds = body.contractorIds.filter((id): id is string => typeof id === 'string');
     const { data: contractorData } = await client.database
       .from('contractors')
       .select('*')
       .in('id', contractorIds);
-    const contractors = Array.isArray(contractorData) ? contractorData as Contractor[] : [];
+    const databaseContractors = Array.isArray(contractorData) ? contractorData as Contractor[] : [];
+    const contractorFromDatabase = databaseContractors[0]
+      ? {
+        id: databaseContractors[0].id,
+        name: databaseContractors[0].name,
+        phone: databaseContractors[0].phone,
+      }
+      : null;
+    const selectedContractor = contractorFromDatabase
+      ?? selectedContractorFromBody(body.selectedContractor, selectedContractorId);
+    if (!selectedContractor) {
+      return jsonResponse({ error: 'Selected contractor not found' }, { status: 404 });
+    }
+
+    const contractors: NotifiableContractor[] = [selectedContractor];
     const message = buildContractorMessage(repairRequest);
 
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
@@ -172,13 +224,22 @@ export default async function notifyContractors(req: Request): Promise<Response>
       user_id: repairRequest.user_id,
       role: 'assistant',
       message_type: 'notification',
-      content: `Contacted ${notifications.length} contractors. Waiting for quotes.`,
-      metadata: { contractorIds, errors },
+      content: `Contacted ${selectedContractor.name}. Waiting for a quote.`,
+      metadata: {
+        contractorId: selectedContractorId,
+        contractorIds,
+        selectedContractor: {
+          id: selectedContractor.id ?? selectedContractorId,
+          name: selectedContractor.name,
+        },
+        errors,
+      },
     }]);
 
     return jsonResponse({
       status: 'success',
       notifiedCount: notifications.length,
+      selectedContractorId,
       errors,
     });
   } catch (error) {

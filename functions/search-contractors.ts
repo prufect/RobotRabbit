@@ -81,14 +81,6 @@ export default async function searchContractorsFunction(req: Request): Promise<R
       metadata: { contractorIds },
     }]);
 
-    await client.database.from('agent_jobs').insert([{
-      request_id: repairRequest.id,
-      user_id: repairRequest.user_id,
-      job_type: 'notify_contractors',
-      status: 'pending',
-      payload: { contractorIds },
-    }]);
-
     return jsonResponse({
       status: 'success',
       results: contractors,

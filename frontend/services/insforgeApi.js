@@ -7,6 +7,8 @@ const REPAIR_PHOTO_BUCKET = 'repair-photos';
 const MAX_REPAIR_PHOTO_BYTES = 4 * 1024 * 1024;
 const REPAIR_PHOTO_MAX_DIMENSION = 1600;
 const REPAIR_PHOTO_QUALITY_STEPS = [0.82, 0.72, 0.62, 0.52];
+const DEFAULT_REPLY_POLL_ATTEMPTS = 8;
+const DEFAULT_REPLY_POLL_INTERVAL_MS = 3000;
 
 export class AuthRequiredError extends Error {
   constructor(message = 'Sign in to connect this repair request to your InsForge backend.') {
@@ -102,6 +104,38 @@ function chooseBestOffer(contractors) {
       const scoreB = (b.rating * 10) - (b.negotiatedPrice * 0.08) - b.distance;
       return scoreB - scoreA;
     })[0];
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function contractorNotificationPayload(contractor) {
+  return {
+    id: contractor.id ?? null,
+    name: contractor.name ?? 'Selected Contractor',
+    phone: contractor.phone ?? null,
+    email: contractor.email ?? null,
+    website: contractor.website ?? null,
+    category: contractor.category ?? null,
+    source_ref: contractor.source_ref ?? null,
+    metadata: contractor.metadata ?? {},
+  };
+}
+
+function quoteMatchesContractor(quote, contractor) {
+  return Boolean(quote) && (
+    quote.contractor_id === contractor.id
+    || (contractor.phone && quote.contractor_phone === contractor.phone)
+    || (contractor.name && quote.contractor_name === contractor.name)
+  );
+}
+
+function findSelectedQuote(status, contractor) {
+  const session = status?.session;
+  const quotes = Array.isArray(session?.quotes) ? session.quotes : [];
+  return quotes.find(quote => quoteMatchesContractor(quote, contractor))
+    ?? (quoteMatchesContractor(session?.bestQuote, contractor) ? session.bestQuote : null);
 }
 
 function rowTimestamp(row) {
@@ -791,20 +825,27 @@ export function createRepairApi(options = {}) {
       return;
     }
 
-    const contractorIds = activeContractorIds.length > 0
-      ? activeContractorIds
-      : contractors.map(contractor => contractor.id).filter(Boolean);
+    if (!contractors?.[0]) {
+      throw new Error('Select a contractor before starting outreach.');
+    }
+    const selectedContractor = normalizeContractor(contractors[0], 0);
+    if (!selectedContractor?.id) {
+      throw new Error('Select a contractor before starting outreach.');
+    }
+
+    const contractorIds = [selectedContractor.id];
 
     yield {
       step: 'contacting',
       count: contractorIds.length,
-      message: `Contacting ${contractorIds.length} professionals through InsForge...`,
+      message: `Contacting ${selectedContractor.name} through InsForge...`,
     };
 
     const notification = await insforge.functions.invoke('notify-contractors', {
       body: {
         requestId: activeRequestId,
         contractorIds,
+        selectedContractor: contractorNotificationPayload(selectedContractor),
       },
     });
     const notificationData = assertSdkResult(notification, 'Contractor notification did not return a response.');
@@ -812,22 +853,34 @@ export function createRepairApi(options = {}) {
     yield {
       step: 'responses',
       count: notificationData.notifiedCount ?? contractorIds.length,
-      message: `${notificationData.notifiedCount ?? contractorIds.length} contractor messages queued.`,
+      message: `Message sent to ${selectedContractor.name}. Waiting for their reply...`,
     };
 
     yield {
       step: 'negotiating',
-      count: contractors.length,
-      message: 'Comparing availability and expected rates...',
+      count: 1,
+      message: 'Watching Telegram replies and quote updates...',
     };
 
-    const status = await getRepairStatus(activeRequestId).catch(() => null);
-    const bestQuote = status?.session?.bestQuote;
+    const replyPollAttempts = Math.max(1, Math.floor(userPreferences.replyPollAttempts ?? DEFAULT_REPLY_POLL_ATTEMPTS));
+    const replyPollIntervalMs = Math.max(0, Math.floor(userPreferences.replyPollIntervalMs ?? DEFAULT_REPLY_POLL_INTERVAL_MS));
+    let status = null;
+    let selectedQuote = null;
+    for (let attempt = 0; attempt < replyPollAttempts; attempt += 1) {
+      status = await getRepairStatus(activeRequestId).catch(() => null);
+      selectedQuote = findSelectedQuote(status, selectedContractor);
+      if (selectedQuote) break;
+      if (attempt < replyPollAttempts - 1 && replyPollIntervalMs > 0) {
+        await sleep(replyPollIntervalMs);
+      }
+    }
+
+    const bestQuote = selectedQuote ?? status?.session?.bestQuote;
 
     yield {
       step: 'comparing',
-      contractors,
-      message: bestQuote ? 'A contractor quote is ready.' : 'Preparing the best available demo offer.',
+      contractors: [selectedContractor],
+      message: bestQuote ? 'A contractor reply is ready.' : 'No reply yet. Preparing the selected demo offer.',
     };
 
     const bestContractor = bestQuote
@@ -839,7 +892,7 @@ export function createRepairApi(options = {}) {
         negotiatedPrice: Number(bestQuote.price ?? 165),
         availability: bestQuote.availability,
       })
-      : chooseBestOffer(contractors);
+      : chooseBestOffer([selectedContractor]);
 
     if (!bestContractor) return;
 
