@@ -1,0 +1,298 @@
+import { createOnboardingSplash } from './components/OnboardingSplash.js';
+import { createChatWindow } from './components/ChatWindow.js';
+import { createVoiceOrb } from './components/VoiceOrb.js';
+import { createCameraCapture } from './components/CameraCapture.js';
+import { createUrgencyToggle } from './components/UrgencyToggle.js';
+import { createAgentActivity } from './components/AgentActivity.js';
+import { createContractorCards } from './components/ContractorCard.js';
+import { createBookingConfirm } from './components/BookingConfirm.js';
+import { createPriceIntel } from './components/PriceIntel.js';
+
+import { analyzeImage, analyzeVoice, searchContractors, negotiateAndBook } from './services/mockApi.js';
+
+// Fallback delay utility
+const wait = (ms) => new Promise(r => setTimeout(r, ms));
+
+document.addEventListener('DOMContentLoaded', () => {
+  const appContainer = document.getElementById('app');
+  
+  // 1. Build the App Shell
+  
+  // Header
+  const header = document.createElement('header');
+  header.className = 'app-header glass';
+  header.innerHTML = `
+    <img src="assets/logo.png" alt="RobotRabbit" class="header-logo">
+    <div style="display:flex; flex-direction:column; justify-content:center;">
+      <h1 style="font-size:1.1rem; font-weight:700; color:var(--text-primary); margin:0; line-height:1.2;">RobotRabbit</h1>
+      <span style="font-size:0.75rem; color:var(--accent-tertiary); font-weight:600; display:flex; align-items:center; gap:4px;">
+        <span style="display:inline-block; width:6px; height:6px; background:var(--accent-tertiary); border-radius:50%; box-shadow:0 0 6px var(--accent-tertiary);"></span>
+        AI Agent Online
+      </span>
+    </div>
+  `;
+  appContainer.appendChild(header);
+  
+  // Main Content Area
+  const mainContent = document.createElement('main');
+  mainContent.className = 'main-content';
+  appContainer.appendChild(mainContent);
+  
+  // Bottom Bar (Input area)
+  const bottomBarWrapper = document.createElement('div');
+  bottomBarWrapper.style.cssText = 'padding: 0 16px; position: sticky; bottom: 0; z-index: 50;';
+  appContainer.appendChild(bottomBarWrapper);
+  
+  const bottomBar = document.createElement('div');
+  bottomBar.className = 'bottom-bar glass-solid';
+  bottomBarWrapper.appendChild(bottomBar);
+  
+  // 2. Initialize Components
+  
+  const chatWindow = createChatWindow(mainContent);
+  const urgencyToggle = createUrgencyToggle(bottomBar);
+  const bookingConfirm = createBookingConfirm(appContainer);
+  
+  // Setup Input Row in Bottom Bar
+  const inputRow = document.createElement('div');
+  inputRow.className = 'input-row';
+  
+  const cameraContainer = document.createElement('div');
+  const cameraCapture = createCameraCapture(cameraContainer);
+  
+  const textInput = document.createElement('input');
+  textInput.type = 'text';
+  textInput.className = 'text-input';
+  textInput.placeholder = 'Describe the issue...';
+  
+  const voiceContainer = document.createElement('div');
+  const voiceOrb = createVoiceOrb(voiceContainer);
+  
+  const sendBtn = document.createElement('button');
+  sendBtn.className = 'icon-btn';
+  sendBtn.innerHTML = `
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="22" y1="2" x2="11" y2="13"></line>
+      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+    </svg>
+  `;
+  sendBtn.style.display = 'none';
+  
+  inputRow.appendChild(cameraContainer);
+  inputRow.appendChild(textInput);
+  inputRow.appendChild(sendBtn);
+  inputRow.appendChild(voiceContainer);
+  bottomBar.appendChild(inputRow);
+  
+  // Create Onboarding Splash
+  createOnboardingSplash(appContainer);
+  
+  // 3. State & Message Handling
+  
+  let msgIdCounter = 0;
+  let currentIssueContext = null;
+  
+  function generateId() {
+    return `msg-${++msgIdCounter}`;
+  }
+  
+  async function addAgentTyping() {
+    chatWindow.addMessage({ id: 'typing', sender: 'agent', type: 'typing' });
+    chatWindow.scrollToBottom();
+    await wait(800 + Math.random() * 1000);
+  }
+  
+  async function processUserInput(text, imageUrl = null) {
+    const id = generateId();
+    chatWindow.addMessage({ id, sender: 'user', text, imageUrl });
+    textInput.value = '';
+    textInput.blur();
+    toggleSendVoiceBtn(false);
+    
+    await addAgentTyping();
+    
+    const urgency = urgencyToggle.getLevel();
+    
+    if (imageUrl) {
+      handleImageFlow(imageUrl, urgency);
+    } else {
+      handleTextFlow(text, urgency);
+    }
+  }
+  
+  // --- Core Application Flows ---
+  
+  async function handleImageFlow(imageUrl, urgency) {
+    const activity = createAgentActivity(mainContent);
+    const step1 = activity.addStep({ icon: '👁️', text: 'Analyzing image...', status: 'active' });
+    chatWindow.scrollToBottom();
+    
+    const result = await analyzeImage(imageUrl, urgency);
+    
+    if (!result.isIdentified) {
+      activity.updateStep(step1, { icon: '❓', status: 'pending' });
+      chatWindow.addMessage({ id: generateId(), sender: 'agent', text: result.messageToUser });
+      return;
+    }
+    
+    activity.updateStep(step1, { icon: '✅', text: `Identified: ${result.brand} ${result.modelNumber}`, status: 'done' });
+    const step2 = activity.addStep({ icon: '🔍', text: 'Searching local professionals...', status: 'active' });
+    chatWindow.addMessage({ id: generateId(), sender: 'agent', text: result.messageToUser });
+    chatWindow.scrollToBottom();
+    
+    currentIssueContext = result;
+    await findAndPresentContractors(result.contractorSearchQuery, urgency, activity, step2);
+  }
+  
+  async function handleTextFlow(text, urgency) {
+    const activity = createAgentActivity(mainContent);
+    const step1 = activity.addStep({ icon: '🧠', text: 'Understanding issue...', status: 'active' });
+    chatWindow.scrollToBottom();
+    
+    const result = await analyzeVoice(text);
+    
+    activity.updateStep(step1, { icon: '✅', text: `Category: ${result.category}`, status: 'done' });
+    const step2 = activity.addStep({ icon: '🔍', text: 'Searching local professionals...', status: 'active' });
+    chatWindow.addMessage({ id: generateId(), sender: 'agent', text: result.messageToUser });
+    chatWindow.scrollToBottom();
+    
+    currentIssueContext = result;
+    await findAndPresentContractors(result.contractorSearchQuery, urgency, activity, step2);
+  }
+  
+  async function findAndPresentContractors(query, urgency, activity, searchStep) {
+    const contractors = await searchContractors(query, 'San Francisco');
+    activity.updateStep(searchStep, { icon: '✅', text: `Found ${contractors.length} qualified pros`, status: 'done' });
+    
+    await wait(800);
+    chatWindow.addMessage({ 
+      id: generateId(), 
+      sender: 'agent', 
+      text: 'I found these highly-rated professionals nearby. Should I negotiate rates and check their availability for you?' 
+    });
+    
+    // Display cards
+    const cardsContainer = document.createElement('div');
+    cardsContainer.style.margin = '12px 0';
+    createContractorCards(contractors.slice(0, 3), cardsContainer);
+    chatWindow.addCustomElement(cardsContainer);
+    
+    // Add Negotiation Button
+    const btnContainer = document.createElement('div');
+    btnContainer.innerHTML = `<button class="btn-primary fade-in" style="margin-top: 8px;">🤖 Yes, negotiate for me</button>`;
+    chatWindow.addCustomElement(btnContainer);
+    
+    btnContainer.querySelector('button').addEventListener('click', async (e) => {
+      e.target.disabled = true;
+      e.target.innerHTML = 'Negotiating...';
+      e.target.style.opacity = '0.7';
+      await startNegotiationFlow(contractors, urgency);
+    });
+  }
+  
+  async function startNegotiationFlow(contractors, urgency) {
+    const activity = createAgentActivity(mainContent);
+    chatWindow.scrollToBottom();
+    
+    const gen = negotiateAndBook(contractors, { urgency });
+    let currentStepIdx = null;
+    let finalBooking = null;
+    
+    for await (const state of gen) {
+      if (currentStepIdx !== null) {
+        activity.updateStep(currentStepIdx, { icon: '✅', status: 'done' });
+      }
+      
+      let icon = '💬';
+      if (state.step === 'responses') icon = '📱';
+      if (state.step === 'negotiating') icon = '🤝';
+      if (state.step === 'comparing') icon = '📊';
+      
+      if (state.step !== 'booked') {
+        currentStepIdx = activity.addStep({ icon, text: state.message, status: 'active' });
+      } else {
+        finalBooking = state.booking;
+      }
+      chatWindow.scrollToBottom();
+    }
+    
+    if (finalBooking) {
+      await wait(1000);
+      
+      // Calculate area averages to show Price Intel
+      const basePrice = finalBooking.contractor.originalPrice;
+      const areaLow = Math.floor(basePrice * 0.9);
+      const areaHigh = Math.floor(basePrice * 1.3);
+      const areaAvg = Math.floor(basePrice * 1.15);
+      
+      const priceIntelContainer = document.createElement('div');
+      createPriceIntel(priceIntelContainer, {
+        areaLow, areaHigh, areaAvg, negotiatedPrice: finalBooking.negotiatedPrice
+      });
+      chatWindow.addCustomElement(priceIntelContainer);
+      
+      chatWindow.addMessage({ 
+        id: generateId(), 
+        sender: 'agent', 
+        text: `Great news! I successfully negotiated with ${finalBooking.contractor.name} and secured a price of $${finalBooking.negotiatedPrice}. They can be there on ${finalBooking.date} at ${finalBooking.time}. I've already verified their license and insurance.` 
+      });
+      
+      await wait(1000);
+      bookingConfirm.show(finalBooking);
+    }
+  }
+  
+  // 4. Event Listeners
+  
+  // Initial Greeting
+  appContainer.addEventListener('get-started', async () => {
+    await wait(500);
+    await addAgentTyping();
+    chatWindow.addMessage({ 
+      id: generateId(), 
+      sender: 'agent', 
+      text: 'Hi! I\'m RobotRabbit 🐰. I can help fix anything in your home. Describe the issue, or snap a photo of what\'s broken.' 
+    });
+  });
+  
+  // Handle text input toggling send button
+  function toggleSendVoiceBtn(hasText) {
+    if (hasText) {
+      voiceContainer.style.display = 'none';
+      sendBtn.style.display = 'flex';
+    } else {
+      voiceContainer.style.display = 'block';
+      sendBtn.style.display = 'none';
+    }
+  }
+  
+  textInput.addEventListener('input', (e) => {
+    toggleSendVoiceBtn(e.target.value.trim().length > 0);
+  });
+  
+  textInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter' && textInput.value.trim()) {
+      processUserInput(textInput.value.trim());
+    }
+  });
+  
+  sendBtn.addEventListener('click', () => {
+    if (textInput.value.trim()) {
+      processUserInput(textInput.value.trim());
+    }
+  });
+  
+  // Handle Camera Capture
+  cameraContainer.addEventListener('photo-captured', (e) => {
+    const { dataUrl } = e.detail;
+    processUserInput('I took a photo of the issue.', dataUrl);
+  });
+  
+  // Handle Voice Input
+  voiceContainer.addEventListener('voice-result', (e) => {
+    const { transcript } = e.detail;
+    if (transcript) {
+      processUserInput(transcript);
+    }
+  });
+});
