@@ -1,5 +1,6 @@
-import { createClient } from '@insforge/sdk';
+import { createClient } from 'https://esm.sh/@insforge/sdk@1.3.1';
 import * as mockApi from './mockApi.js';
+import * as realApi from './realApi.js';
 
 const DEFAULT_LOCATION = 'San Francisco, CA';
 const DEFAULT_BASE_URL = 'https://pzv974n7.us-east.insforge.app';
@@ -112,7 +113,7 @@ export function createRepairApi(options = {}) {
     ...(options.config ?? {}),
   };
   const cryptoImpl = options.cryptoImpl ?? globalThis.crypto;
-  const fallbackApi = options.fallbackApi ?? mockApi;
+  const fallbackApi = options.fallbackApi ?? (config.useMock ? mockApi : realApi);
   const injectedClient = Boolean(options.insforge);
   const insforge = options.insforge
     ?? (config.anonKey && !config.useMock ? createClient({ baseUrl: config.baseUrl, anonKey: config.anonKey }) : null);

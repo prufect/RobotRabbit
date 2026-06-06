@@ -7,6 +7,9 @@ export const config = {
   mockMode: bool(process.env.MOCK_MODE),
   defaultLocation: process.env.DEFAULT_LOCATION || 'San Francisco, CA',
 
+  // Track 2 AI Agent — for forwarding contractor replies
+  track2BaseUrl: process.env.TRACK2_BASE_URL || '',
+
   serperApiKey: process.env.SERPER_API_KEY || '',
 
   twilio: {

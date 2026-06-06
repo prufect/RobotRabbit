@@ -1,6 +1,26 @@
 {
   "rewrites": [
     {
+      "source": "/api/analyze",
+      "destination": "https://track2aiagent.vercel.app/api/analyze"
+    },
+    {
+      "source": "/api/contractor-reply",
+      "destination": "https://track2aiagent.vercel.app/api/contractor-reply"
+    },
+    {
+      "source": "/api/status/:path*",
+      "destination": "https://track2aiagent.vercel.app/api/status/:path*"
+    },
+    {
+      "source": "/api/health",
+      "destination": "https://track2aiagent.vercel.app/api/health"
+    },
+    {
+      "source": "/api/search-contractors",
+      "destination": "https://track3integrations.vercel.app/api/search-contractors"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }
