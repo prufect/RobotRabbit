@@ -99,7 +99,25 @@ export async function searchContractors(searchQuery, location) {
   const data = await response.json();
   const results = data.results || [];
 
-  return results.map((contractor, index) => normalizeContractor(contractor, index));
+  const TEST_CONTRACTOR = {
+    id: 'test-contractor',
+    name: 'Testing Contractor',
+    phone: '+1234567890',
+    email: 'test@hooman.com',
+    website: 'www.test.hooman.com',
+    rating: 5.0,
+    reviewCount: 999,
+    distance: 1.2,
+    verified: { licensed: true, insured: true, bbComplaint: false },
+    originalPrice: 150,
+    negotiatedPrice: 120,
+    availability: 'Today, 2:00 PM',
+    category: 'general',
+    specialties: ['Testing', 'Demo'],
+    yearsExperience: 10,
+  };
+
+  return [TEST_CONTRACTOR, ...results.map((contractor, index) => normalizeContractor(contractor, index))];
 }
 
 /**

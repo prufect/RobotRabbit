@@ -16,6 +16,7 @@ import {
   analyzeVoice,
   searchContractors,
   negotiateAndBook,
+  finalizeBooking,
   getConversations,
   getCurrentUser,
   signIn,
@@ -689,11 +690,12 @@ document.addEventListener('DOMContentLoaded', () => {
     btnContainer.innerHTML = `<button class="btn-primary fade-in" style="margin-top: 8px;">🤖 Negotiate with top 3</button>`;
     chatWindow.addCustomElement(btnContainer);
     
-    const startNegotiation = async (btn) => {
+    const startNegotiation = async (btn, specificContractor = null) => {
       btn.disabled = true;
       btn.innerHTML = 'Negotiating...';
       btn.style.opacity = '0.7';
-      await startNegotiationFlow(contractors, urgency);
+      const contractorsToNegotiate = specificContractor ? [specificContractor] : contractors;
+      await startNegotiationFlow(contractorsToNegotiate, urgency);
     };
 
     btnContainer.querySelector('button').addEventListener('click', (e) => startNegotiation(e.target));
@@ -701,7 +703,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cardsContainer.addEventListener('contractor-selected', (e) => {
       showContractorDetailModal(e.detail.contractor, () => {
         const btn = btnContainer.querySelector('button');
-        startNegotiation(btn);
+        startNegotiation(btn, e.detail.contractor);
       });
     });
   }
@@ -757,11 +759,60 @@ document.addEventListener('DOMContentLoaded', () => {
       chatWindow.addMessage({ 
         id: generateId(), 
         sender: 'agent', 
-        text: `Great news! I successfully negotiated with ${finalBooking.contractor.name} and secured a price of $${finalBooking.negotiatedPrice}. They can be there on ${finalBooking.date} at ${finalBooking.time}. I've already verified their license and insurance.` 
+        text: `The final price is negotiated in between these three contractors to $${finalBooking.negotiatedPrice} with ${finalBooking.contractor.name}. Do you want to accept the offer?` 
       });
       
       await wait(1000);
-      bookingConfirm.show(finalBooking);
+
+      const calendarContainer = document.createElement('div');
+      calendarContainer.style.display = 'flex';
+      calendarContainer.style.flexWrap = 'wrap';
+      calendarContainer.style.gap = '8px';
+      calendarContainer.style.marginTop = '12px';
+
+      const slots = ['Today, 2:00 PM', 'Today, 4:00 PM', 'Tomorrow, 10:00 AM', 'Tomorrow, 1:00 PM'];
+      
+      slots.forEach(slot => {
+        const btn = document.createElement('button');
+        btn.className = 'btn-primary';
+        btn.style.flex = '1 1 calc(50% - 8px)';
+        btn.style.background = 'white';
+        btn.style.color = 'var(--accent-primary)';
+        btn.style.border = '1px solid var(--accent-primary)';
+        btn.innerHTML = `📅 ${slot}`;
+        
+        btn.addEventListener('click', async () => {
+          // Disable all buttons
+          Array.from(calendarContainer.querySelectorAll('button')).forEach(b => {
+            b.disabled = true;
+            b.style.opacity = '0.5';
+          });
+          btn.style.background = 'var(--accent-primary)';
+          btn.style.color = 'white';
+          btn.innerHTML = 'Booking...';
+
+          finalBooking.date = slot.split(',')[0];
+          finalBooking.time = slot.split(',')[1].trim();
+
+          try {
+            await finalizeBooking(finalBooking.contractor.id, finalBooking.date, finalBooking.time);
+          } catch (error) {
+            console.error("Booking finalization failed:", error);
+          }
+
+          chatWindow.addMessage({
+            id: generateId(),
+            sender: 'agent',
+            text: `Awesome! I've booked your appointment for ${slot}. A calendar invite has been sent to you and the contractor.`
+          });
+
+          bookingConfirm.show(finalBooking);
+        });
+
+        calendarContainer.appendChild(btn);
+      });
+
+      chatWindow.addCustomElement(calendarContainer);
     }
   }
   

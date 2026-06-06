@@ -1,5 +1,5 @@
 import { createAdminClient, createClient } from 'npm:@insforge/sdk';
-import { buildContractorMessage, createMockNotification, sendWhatsAppNotification } from './_shared/notifications.ts';
+import { buildContractorMessage, createMockNotification, sendWhatsAppNotification, sendTelegramNotification } from './_shared/notifications.ts';
 import {
   adminApiKey,
   edgeBaseUrl,
@@ -67,12 +67,48 @@ export default async function notifyContractors(req: Request): Promise<Response>
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
     const twilioFrom = Deno.env.get('TWILIO_WHATSAPP_FROM');
+    
+    const telegramBotToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
+    const telegramChatId = Deno.env.get('TELEGRAM_CHAT_ID') || Deno.env.get('TELEGRAM_TEST_CHAT_ID');
 
     const notifications: NotificationInsert[] = [];
     const errors: string[] = [];
 
     for (const contractor of contractors) {
-      if (twilioAccountSid && twilioAuthToken && twilioFrom && contractor.phone) {
+      if (contractor.id === 'test-contractor' && telegramBotToken && telegramChatId) {
+        try {
+          const messageId = await sendTelegramNotification({
+            botToken: telegramBotToken,
+            chatId: telegramChatId,
+            message,
+          });
+          notifications.push({
+            request_id: repairRequest.id,
+            user_id: repairRequest.user_id,
+            contractor_id: contractor.id,
+            channel: 'telegram',
+            destination: telegramChatId,
+            status: 'sent',
+            message,
+            provider_message_id: messageId,
+            last_error: null,
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Telegram send failed';
+          errors.push(`${contractor.name}: ${errorMessage}`);
+          notifications.push({
+            request_id: repairRequest.id,
+            user_id: repairRequest.user_id,
+            contractor_id: contractor.id,
+            channel: 'telegram',
+            destination: telegramChatId,
+            status: 'failed',
+            message,
+            provider_message_id: null,
+            last_error: errorMessage,
+          });
+        }
+      } else if (twilioAccountSid && twilioAuthToken && twilioFrom && contractor.phone) {
         try {
           const sid = await sendWhatsAppNotification({
             accountSid: twilioAccountSid,

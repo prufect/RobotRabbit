@@ -611,8 +611,27 @@ export function createRepairApi(options = {}) {
     const results = Array.isArray(data.results)
       ? data.results.map(normalizeContractor)
       : [];
-    activeContractors = results;
-    return results;
+      
+    const TEST_CONTRACTOR = {
+      id: 'test-contractor',
+      name: 'Testing Contractor',
+      phone: '+1234567890',
+      email: 'test@hooman.com',
+      website: 'www.test.hooman.com',
+      rating: 5.0,
+      reviewCount: 999,
+      distance: 1.2,
+      verified: { licensed: true, insured: true, bbComplaint: false },
+      originalPrice: 150,
+      negotiatedPrice: 120,
+      availability: 'Today, 2:00 PM',
+      category: 'general',
+      specialties: ['Testing', 'Demo'],
+      yearsExperience: 10,
+    };
+
+    activeContractors = [TEST_CONTRACTOR, ...results];
+    return activeContractors;
   }
 
   async function getRepairStatus(requestId = activeRequestId) {
@@ -694,6 +713,14 @@ export function createRepairApi(options = {}) {
     };
   }
 
+  async function finalizeBooking(contractorId, date, time) {
+    if (!isBackendConfigured() || !activeRequestId) return;
+    const response = await insforge.functions.invoke('finalize-booking', {
+      body: { requestId: activeRequestId, contractorId, date, time },
+    });
+    return assertSdkResult(response, 'Booking finalization failed.');
+  }
+
   return {
     insforge,
     isBackendConfigured,
@@ -711,6 +738,7 @@ export function createRepairApi(options = {}) {
     analyzeVoice,
     searchContractors,
     negotiateAndBook,
+    finalizeBooking,
     getRepairStatus,
     getConversations,
   };
@@ -733,5 +761,6 @@ export const analyzeImage = defaultApi.analyzeImage;
 export const analyzeVoice = defaultApi.analyzeVoice;
 export const searchContractors = defaultApi.searchContractors;
 export const negotiateAndBook = defaultApi.negotiateAndBook;
+export const finalizeBooking = defaultApi.finalizeBooking;
 export const getRepairStatus = defaultApi.getRepairStatus;
 export const getConversations = defaultApi.getConversations;

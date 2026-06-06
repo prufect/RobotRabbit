@@ -65,3 +65,27 @@ export async function sendWhatsAppNotification(input: {
   const payload = await response.json();
   return String(payload.sid ?? '');
 }
+
+export async function sendTelegramNotification(input: {
+  botToken: string;
+  chatId: string;
+  message: string;
+}): Promise<string> {
+  const response = await fetch(`https://api.telegram.org/bot${input.botToken}/sendMessage`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      chat_id: input.chatId,
+      text: input.message,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Telegram send failed: ${response.status} ${await response.text()}`);
+  }
+
+  const payload = await response.json();
+  return String(payload.result?.message_id ?? '');
+}
