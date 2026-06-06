@@ -18,6 +18,7 @@ import cors from 'cors';
 import { v4 as uuidv4 } from 'uuid';
 import config from './config.js';
 import { analyzeHandler } from './handlers/analyze.js';
+import { analyzeTextHandler } from './handlers/analyzeText.js';
 import { contractorReplyHandler } from './handlers/contractorReply.js';
 import { statusHandler } from './handlers/status.js';
 import { errorHandler } from './utils/errors.js';
@@ -74,6 +75,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.post('/api/analyze', analyzeHandler);
+app.post('/api/analyze-text', analyzeTextHandler);
 app.post('/api/contractor-reply', contractorReplyHandler);
 app.get('/api/status/:conversationId', statusHandler);
 
