@@ -97,3 +97,25 @@ export type NotificationInsert = {
   reply_body?: string | null;
   last_error?: string | null;
 };
+
+export type ConversationInsert = {
+  user_id: string;
+  contractor_id: string | null;
+  contractor_name: string;
+  contractor_phone: string | null;
+  latest_request_id: string;
+  status?: 'active' | 'archived';
+  last_message_at?: string;
+  last_message_preview?: string;
+  unread_count?: number;
+};
+
+export type ConversationMessageInsert = {
+  conversation_id: string;
+  request_id: string | null;
+  direction: 'inbound' | 'outbound';
+  channel: string;
+  kind: string;
+  body: string;
+  metadata?: Record<string, unknown>;
+};

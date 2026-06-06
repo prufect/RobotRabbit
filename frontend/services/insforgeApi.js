@@ -760,17 +760,101 @@ export function createRepairApi(options = {}) {
       return config.useMock ? fallbackApi.getConversations() : [];
     }
 
-    if (!activeRequestId) return [];
-
     try {
-      return buildConversationsFromStatus(
-        await getRepairStatus(activeRequestId),
-        activeContractors,
-      );
+      const user = await requireCurrentUser().catch(() => null);
+      if (!user) return [];
+
+      // Primary: query the persistent conversations table (across ALL requests)
+      const { data: convRows } = await insforge.database
+        .from('conversations')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'active')
+        .order('last_message_at', { ascending: false });
+
+      if (convRows && convRows.length > 0) {
+        // Fetch the latest messages for each conversation (up to 50 per conv)
+        const conversationsWithMessages = await Promise.all(
+          convRows.map(async (conv) => {
+            const { data: msgs } = await insforge.database
+              .from('conversation_messages')
+              .select('*')
+              .eq('conversation_id', conv.id)
+              .order('created_at', { ascending: true });
+
+            const messages = (msgs || []).map((m) => ({
+              id: m.id,
+              direction: m.direction,
+              channel: m.channel,
+              kind: m.kind,
+              body: m.body,
+              at: m.created_at,
+              requestId: m.request_id,
+              metadata: m.metadata,
+            }));
+
+            const last = messages.at(-1);
+            return {
+              conversationId: conv.id,
+              phone: conv.contractor_phone ?? conv.contractor_id ?? conv.id,
+              name: conv.contractor_name ?? 'Service Provider',
+              contractorId: conv.contractor_id,
+              requestId: conv.latest_request_id,
+              messages,
+              messageCount: messages.length,
+              lastMessageAt: last?.at ?? conv.last_message_at,
+              lastMessage: last?.body ?? conv.last_message_preview ?? '',
+              unreadCount: conv.unread_count ?? 0,
+            };
+          }),
+        );
+
+        return conversationsWithMessages;
+      }
+
+      // Fallback: build from status (old path) for backward compat
+      if (activeRequestId) {
+        return buildConversationsFromStatus(
+          await getRepairStatus(activeRequestId),
+          activeContractors,
+        );
+      }
+
+      return [];
     } catch (error) {
       console.warn('getConversations failed:', error?.message ?? error);
+      // Fallback to old method on error
+      if (activeRequestId) {
+        try {
+          return buildConversationsFromStatus(
+            await getRepairStatus(activeRequestId),
+            activeContractors,
+          );
+        } catch { return []; }
+      }
       return [];
     }
+  }
+
+  async function getConversationMessages(conversationId) {
+    if (!isBackendConfigured() || !conversationId) return [];
+    try {
+      const { data: msgs } = await insforge.database
+        .from('conversation_messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+      return (msgs || []).map((m) => ({
+        id: m.id,
+        direction: m.direction,
+        channel: m.channel,
+        kind: m.kind,
+        body: m.body,
+        at: m.created_at,
+        requestId: m.request_id,
+        metadata: m.metadata,
+      }));
+    } catch { return []; }
   }
 
   async function searchContractors(query, location = config.locationText) {
@@ -936,6 +1020,7 @@ export function createRepairApi(options = {}) {
     finalizeBooking,
     getRepairStatus,
     getConversations,
+    getConversationMessages,
     loadRecentSession,
     getOrCreateActiveRequest,
     saveMessage,
@@ -962,6 +1047,7 @@ export const negotiateAndBook = defaultApi.negotiateAndBook;
 export const finalizeBooking = defaultApi.finalizeBooking;
 export const getRepairStatus = defaultApi.getRepairStatus;
 export const getConversations = defaultApi.getConversations;
+export const getConversationMessages = defaultApi.getConversationMessages;
 export const loadRecentSession = defaultApi.loadRecentSession;
 export const getOrCreateActiveRequest = defaultApi.getOrCreateActiveRequest;
 export const saveMessage = defaultApi.saveMessage;
