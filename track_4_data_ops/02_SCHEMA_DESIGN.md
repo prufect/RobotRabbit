@@ -35,4 +35,22 @@ CREATE TABLE contractor_responses (
     eta_minutes INTEGER,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Message Center: every message between the agent and a service provider,
+-- both directions, across any channel. Powers the conversation UI.
+-- Written by Track 3 (src/store.js). request_id is TEXT (not a strict FK) so
+-- it tolerates whatever conversation id the agent threads through.
+CREATE TABLE messages (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    request_id TEXT,
+    contractor_phone TEXT NOT NULL,
+    contractor_name TEXT,
+    direction TEXT NOT NULL,        -- 'outbound' (agent -> provider) | 'inbound' (provider -> agent)
+    channel TEXT NOT NULL,          -- 'whatsapp' | 'sms' | 'telegram' | 'mock'
+    kind TEXT,                      -- 'outreach' | 'reply' | 'booking' | 'decline'
+    body TEXT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX idx_messages_phone ON messages (contractor_phone);
+CREATE INDEX idx_messages_request ON messages (request_id);
 ```
