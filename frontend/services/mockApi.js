@@ -2,6 +2,8 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+let liveConversations = [];
+
 export async function analyzeImage(imageUrl, urgency) {
   await delay(2000);
   
@@ -101,32 +103,89 @@ export async function searchContractors(searchQuery, location) {
 }
 
 export async function* negotiateAndBook(contractors, userPreferences) {
-  yield { step: 'contacting', count: contractors.length, message: `Contacting ${contractors.length} professionals in your area...` };
+  const topContractors = contractors.slice(0, 3);
+  
+  const now = Date.now();
+  const t = (offsetMs) => new Date(now + offsetMs).toISOString();
+
+  liveConversations = topContractors.map((c, i) => ({
+    phone: c.phone || `+1555000000${i}`,
+    name: c.name,
+    requestId: 'live-session',
+    messageCount: 1,
+    lastMessageAt: t(0),
+    lastMessage: '🛠️ *New Job Request*...',
+    messages: [
+      { id: `m_out_${i}_1`, direction: 'outbound', channel: 'sms', kind: 'outreach', body: `🛠️ *New Job Request* — Please provide a quote for the requested repair.`, at: t(0) }
+    ]
+  }));
+
+  yield { step: 'contacting', count: topContractors.length, message: `Contacting ${topContractors.length} professionals in your area...` };
   await delay(1500);
+
+  const quotedContractors = [];
+  for (let i = 0; i < topContractors.length; i++) {
+    const c = topContractors[i];
+    
+    yield { step: 'contacting-individual', count: i + 1, message: `📞 Contacting ${c.name}...` };
+    await delay(1500 + Math.random() * 1500);
+    
+    const discount = Math.floor((c.originalPrice || 180) * (0.1 + Math.random() * 0.15));
+    const negotiatedPrice = (c.originalPrice || 180) - discount;
+    const availabilityOptions = ['Today, 3:00 PM', 'Today, 5:00 PM', 'Tomorrow, 9:00 AM', 'Tomorrow, 11:00 AM', 'Today, 6:30 PM'];
+    const avail = c.availability || availabilityOptions[Math.floor(Math.random() * availabilityOptions.length)];
+
+    const conv = liveConversations.find(x => x.name === c.name);
+    if (conv) {
+        const replyTime = new Date().toISOString();
+        const msg = { id: `m_in_${i}_2`, direction: 'inbound', channel: 'sms', kind: 'reply', body: `Yes available ${avail}, my rate is $${negotiatedPrice}`, at: replyTime };
+        conv.messages.push(msg);
+        conv.messageCount++;
+        conv.lastMessage = msg.body;
+        conv.lastMessageAt = replyTime;
+    }
+
+    yield { step: 'responses', count: i + 1, message: `✅ ${c.name} replied: Available ${avail}, $${negotiatedPrice}` };
+    await delay(800 + Math.random() * 700);
+    
+    quotedContractors.push({
+      ...c,
+      negotiatedPrice,
+      availability: avail,
+    });
+  }
   
-  yield { step: 'responses', count: 4, message: '4 professionals replied with availability.' };
-  await delay(1000);
-  
-  yield { step: 'negotiating', count: 3, message: 'Negotiating rates with the top 3 certified pros...' };
+  yield { step: 'negotiating', count: quotedContractors.length, message: 'Negotiating rates with the top 3 certified pros...' };
   await delay(2500);
   
-  // Calculate negotiated prices
-  const negotiatedContractors = contractors.slice(0, 3).map(c => {
-    const discount = Math.floor(c.originalPrice * (0.1 + Math.random() * 0.15)); // 10-25% discount
-    return { ...c, negotiatedPrice: c.originalPrice - discount };
-  });
-  
-  // Sort by best value (combination of rating, distance, price)
-  negotiatedContractors.sort((a, b) => {
+  quotedContractors.sort((a, b) => {
     const scoreA = (a.rating * 10) - (a.negotiatedPrice * 0.1) - a.distance;
     const scoreB = (b.rating * 10) - (b.negotiatedPrice * 0.1) - b.distance;
     return scoreB - scoreA;
   });
   
-  yield { step: 'comparing', contractors: negotiatedContractors, message: 'Comparing finalized offers...' };
+  const bestContractor = quotedContractors[0];
+
+  liveConversations.forEach((conv, i) => {
+      const accepted = conv.name === bestContractor.name;
+      const replyTime = new Date().toISOString();
+      const msg = { 
+        id: `m_out_${i}_3`, 
+        direction: 'outbound', 
+        channel: 'sms', 
+        kind: accepted ? 'booking' : 'rejection', 
+        body: accepted ? `Congrats! We'd like to book you.` : `Thanks for responding — homeowner went with another provider.`, 
+        at: replyTime 
+      };
+      conv.messages.push(msg);
+      conv.messageCount++;
+      conv.lastMessage = msg.body;
+      conv.lastMessageAt = replyTime;
+  });
+
+  yield { step: 'comparing', contractors: quotedContractors, message: 'Comparing finalized offers...' };
   await delay(1500);
   
-  const bestContractor = negotiatedContractors[0];
   yield { 
     step: 'booked', 
     booking: { 
@@ -210,6 +269,11 @@ export async function analyzeVoice(transcript) {
 // Mock Message Center threads so the panel demos without a live backend.
 export async function getConversations() {
   await delay(300);
+  
+  if (liveConversations && liveConversations.length > 0) {
+    return [...liveConversations];
+  }
+  
   const now = Date.now();
   const t = (min) => new Date(now - min * 60000).toISOString();
   return [

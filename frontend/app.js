@@ -715,34 +715,30 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   async function startNegotiationFlow(contractors, urgency) {
-    const activity = createAgentActivity(mainContent);
     chatWindow.scrollToBottom();
     
+    chatWindow.addMessage({ 
+      id: generateId(), 
+      sender: 'agent', 
+      text: `Negotiation has started with ${Math.min(3, contractors.length)} agents. If you want to see details, go to the Messages.` 
+    });
+    
+    const mcToggle = document.querySelector('.mc-toggle');
+    if (mcToggle) {
+      mcToggle.style.animation = 'none';
+      setTimeout(() => mcToggle.style.animation = 'pulse 1s 3', 50);
+    }
+    
     const gen = negotiateAndBook(contractors, { urgency });
-    let currentStepIdx = null;
     let finalBooking = null;
     
     try {
       for await (const state of gen) {
-        if (currentStepIdx !== null) {
-          activity.updateStep(currentStepIdx, { icon: '✅', status: 'done' });
-        }
-
-        let icon = '💬';
-        if (state.step === 'contacting-individual') icon = '📞';
-        if (state.step === 'responses') icon = '📱';
-        if (state.step === 'negotiating') icon = '🤝';
-        if (state.step === 'comparing') icon = '📊';
-
-        if (state.step !== 'booked') {
-          currentStepIdx = activity.addStep({ icon, text: state.message, status: 'active' });
-        } else {
+        if (state.step === 'booked') {
           finalBooking = state.booking;
         }
-        chatWindow.scrollToBottom();
       }
     } catch (error) {
-      if (currentStepIdx !== null) activity.updateStep(currentStepIdx, { icon: '!', status: 'pending' });
       chatWindow.addMessage({ id: generateId(), sender: 'agent', text: error.message || 'Negotiation failed.' });
       return;
     }
