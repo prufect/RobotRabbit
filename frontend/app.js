@@ -676,7 +676,7 @@ document.addEventListener('DOMContentLoaded', () => {
     chatWindow.addMessage({ 
       id: generateId(), 
       sender: 'agent', 
-      text: 'I found these highly-rated professionals nearby. Should I negotiate rates and check their availability for you?' 
+      text: "I found these highly-rated professionals nearby. I'm contacting the top 3 now." 
     });
     
     // Display cards
@@ -690,7 +690,10 @@ document.addEventListener('DOMContentLoaded', () => {
     btnContainer.innerHTML = `<button class="btn-primary fade-in" style="margin-top: 8px;">🤖 Negotiate with top 3</button>`;
     chatWindow.addCustomElement(btnContainer);
     
+    let negotiationStarted = false;
     const startNegotiation = async (btn, specificContractor = null) => {
+      if (negotiationStarted) return;
+      negotiationStarted = true;
       btn.disabled = true;
       btn.innerHTML = 'Negotiating...';
       btn.style.opacity = '0.7';
@@ -706,6 +709,9 @@ document.addEventListener('DOMContentLoaded', () => {
         startNegotiation(btn, e.detail.contractor);
       });
     });
+
+    const autoNegotiationButton = btnContainer.querySelector('button');
+    startNegotiation(autoNegotiationButton);
   }
   
   async function startNegotiationFlow(contractors, urgency) {
