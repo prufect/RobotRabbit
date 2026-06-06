@@ -1410,6 +1410,306 @@ body {
   to { transform: translateY(0); opacity: 1; }
 }
 
+/* ==========================================================================
+   IMAGE SCAN OVERLAY — Premium scanning animation over uploaded images
+   ========================================================================== */
+
+/* Container for uploaded images — scan overlay target */
+.image-scan-target {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  margin-bottom: 8px;
+}
+
+/* Main overlay */
+.image-scan-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 12px;
+  pointer-events: none;
+  border-radius: 12px;
+  transition: background 0.4s ease;
+}
+
+.image-scan-overlay.scanning {
+  background: rgba(0, 10, 30, 0.35);
+}
+
+.image-scan-overlay.identified {
+  background: rgba(0, 10, 30, 0.25);
+}
+
+.image-scan-overlay.unclear {
+  background: rgba(30, 10, 0, 0.3);
+}
+
+/* Corner brackets */
+.scan-bracket {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border-color: #00d4ff;
+  border-style: solid;
+  border-width: 0;
+  transition: all 0.5s ease;
+  opacity: 0;
+}
+
+.scanning .scan-bracket {
+  opacity: 1;
+  animation: scan-bracket-pulse 2s ease-in-out infinite;
+}
+
+.identified .scan-bracket {
+  opacity: 1;
+  border-color: #00e676;
+  animation: none;
+}
+
+.unclear .scan-bracket {
+  opacity: 1;
+  border-color: #ffab40;
+  animation: none;
+}
+
+.scan-bracket-tl {
+  top: 8px; left: 8px;
+  border-top-width: 3px;
+  border-left-width: 3px;
+  border-top-left-radius: 8px;
+}
+
+.scan-bracket-tr {
+  top: 8px; right: 8px;
+  border-top-width: 3px;
+  border-right-width: 3px;
+  border-top-right-radius: 8px;
+}
+
+.scan-bracket-bl {
+  bottom: 8px; left: 8px;
+  border-bottom-width: 3px;
+  border-left-width: 3px;
+  border-bottom-left-radius: 8px;
+}
+
+.scan-bracket-br {
+  bottom: 8px; right: 8px;
+  border-bottom-width: 3px;
+  border-right-width: 3px;
+  border-bottom-right-radius: 8px;
+}
+
+@keyframes scan-bracket-pulse {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.04); }
+}
+
+/* Scanning line */
+.scan-line {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #00d4ff 20%, #00d4ff 80%, transparent);
+  box-shadow: 0 0 12px 3px rgba(0, 212, 255, 0.5),
+              0 0 30px 6px rgba(0, 212, 255, 0.2);
+  animation: scan-sweep 2s ease-in-out infinite;
+  z-index: 11;
+}
+
+@keyframes scan-sweep {
+  0% { top: 12px; opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { top: calc(100% - 12px); opacity: 0; }
+}
+
+/* Detection label badge */
+.scan-label {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  z-index: 12;
+  animation: scan-label-in 0.4s ease-out both;
+}
+
+.identified .scan-label {
+  background: rgba(0, 230, 118, 0.2);
+  color: #00e676;
+  border: 1px solid rgba(0, 230, 118, 0.3);
+  backdrop-filter: blur(8px);
+}
+
+.unclear .scan-label {
+  background: rgba(255, 171, 64, 0.2);
+  color: #ffab40;
+  border: 1px solid rgba(255, 171, 64, 0.3);
+  backdrop-filter: blur(8px);
+}
+
+.scan-label-icon {
+  flex-shrink: 0;
+}
+
+@keyframes scan-label-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Status text */
+.scan-status-text {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 8px;
+  animation: scan-status-pulse 1.5s ease-in-out infinite;
+}
+
+.unclear .scan-status-text {
+  color: #ffab40;
+  animation: none;
+}
+
+@keyframes scan-status-pulse {
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 1; }
+}
+
+/* Steps container */
+.scan-steps-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Individual step */
+.scan-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  transform: translateY(6px);
+  transition: all 0.35s ease;
+}
+
+.scan-step.active {
+  opacity: 1;
+  transform: translateY(0);
+  animation: scan-step-appear 0.35s ease-out both;
+}
+
+.scan-step.completed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.scan-step.unclear {
+  opacity: 0.5;
+  transform: translateY(0);
+}
+
+@keyframes scan-step-appear {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Step checkmark */
+.scan-step-check {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.scan-step-check svg {
+  width: 22px;
+  height: 22px;
+}
+
+.scan-step-circle {
+  stroke: rgba(255, 255, 255, 0.3);
+  fill: none;
+  transition: stroke 0.3s ease;
+}
+
+.scan-step-tick {
+  stroke: rgba(255, 255, 255, 0.3);
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  transition: stroke-dashoffset 0.4s ease, stroke 0.3s ease;
+}
+
+.scan-step.active .scan-step-circle {
+  stroke: #00d4ff;
+  animation: scan-circle-spin 1s linear infinite;
+}
+
+.scan-step.completed .scan-step-circle {
+  stroke: #00e676;
+}
+
+.scan-step.completed .scan-step-tick {
+  stroke: #00e676;
+  stroke-dashoffset: 0;
+}
+
+.scan-step.unclear .scan-step-circle {
+  stroke: #ffab40;
+}
+
+.scan-step.unclear .scan-step-tick {
+  stroke: #ffab40;
+  stroke-dashoffset: 10;
+}
+
+@keyframes scan-circle-spin {
+  from { transform: rotate(0deg); transform-origin: center; }
+  to { transform: rotate(360deg); transform-origin: center; }
+}
+
+/* Step text */
+.scan-step-text {
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.scan-step.completed .scan-step-text {
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.scan-step.active .scan-step-text {
+  color: #00d4ff;
+}
+
+.scan-step.unclear .scan-step-text {
+  color: rgba(255, 171, 64, 0.7);
+}
+
+/* ==========================================================================
+   END IMAGE SCAN OVERLAY
+   ========================================================================== */
+
+
 .typing-indicator {
   display: flex;
   gap: 4px;

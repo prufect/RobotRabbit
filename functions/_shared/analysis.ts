@@ -23,17 +23,30 @@ const VISION_SYSTEM_PROMPT = [
   '- If you see a DIRTY or MESSY area, the category is "cleaning".',
   '- Only use "hvac" if you SPECIFICALLY see an HVAC unit, air conditioner, furnace, or thermostat.',
   '- Only set brand and modelNumber when a specific manufactured appliance with visible branding is present.',
-  '- If you cannot identify the issue, set isIdentified to false and ask for a better photo.',
+  '',
+  'CONFIDENCE SCORING (CRITICAL):',
+  '- You MUST return a "confidenceScore" from 0 to 100.',
+  '- 100 = You are absolutely certain about the issue category and can describe the problem clearly.',
+  '- 70-99 = You have a good idea but are not fully certain. Set isIdentified to false.',
+  '- Below 70 = You cannot determine the issue. Set isIdentified to false.',
+  '- Only set isIdentified to true when confidenceScore is exactly 100.',
+  '- When confidenceScore < 100, you MUST provide a "clarifyingQuestion" — a specific question to ask the user to improve your understanding.',
+  '- Do NOT guess or assume. If unsure, ask.',
+  '',
+  'CLARIFYING QUESTIONS:',
+  '- Be specific: "Is this peeling paint on the wall, or water damage?" NOT "Can you tell me more?"',
+  '- Reference what you see: "I can see what looks like a stain on the wall. Is this a water leak or discoloration?"',
+  '- If the image is completely unclear: "I\'m having trouble identifying the issue in this photo. Could you describe what needs fixing, or take a closer photo of the problem area?"',
   '',
   'Return ONLY a JSON object with these fields:',
-  '{ "isIdentified": boolean, "category": string, "brand": string|null, "modelNumber": string|null, "messageToUser": string, "contractorSearchQuery": string|null }',
+  '{ "isIdentified": boolean, "confidenceScore": number, "category": string, "brand": string|null, "modelNumber": string|null, "messageToUser": string, "contractorSearchQuery": string|null, "clarifyingQuestion": string|null }',
   '',
   'For contractorSearchQuery, create a search query that would find the RIGHT type of professional.',
   'Examples: "carpenter woodwork repair", "house painter contractor", "licensed plumber", "HVAC repair technician".',
   'Set contractorSearchQuery to null only when isIdentified is false.',
 ].join('\n');
 
-const VISION_USER_PROMPT = 'Analyze this photo. What home service or repair does the user need? Identify the issue category, and if a specific appliance is visible, identify the brand and model. Look carefully at the actual content of the image — do not assume it is an HVAC unit.';
+const VISION_USER_PROMPT = 'Analyze this photo. What home service or repair does the user need? Identify the issue category, and if a specific appliance is visible, identify the brand and model. Look carefully at the actual content of the image — do not assume it is an HVAC unit. Return your confidence score (0-100) — only return 100 if you are absolutely certain.';
 
 export function parseJsonObject(text: string): Record<string, unknown> {
   let cleaned = text.trim();
@@ -62,10 +75,13 @@ function searchQueryFrom(raw: RawAnalysis, category: string, brand: string | nul
 }
 
 export function normalizeAnalysis(raw: RawAnalysis): NormalizedAnalysis {
-  const isIdentified = raw.isIdentified === true || raw.status === 'identified';
+  const rawConfidence = typeof raw.confidenceScore === 'number' ? raw.confidenceScore : (typeof raw.confidence_score === 'number' ? raw.confidence_score : null);
+  const confidenceScore = rawConfidence !== null ? Math.max(0, Math.min(100, Math.round(rawConfidence))) : (raw.isIdentified === true ? 100 : 50);
+  const isIdentified = confidenceScore === 100;
   const category = stringOrNull(raw.category) ?? 'unknown';
   const brand = stringOrNull(raw.brand);
   const modelNumber = stringOrNull(raw.modelNumber) ?? stringOrNull(raw.model_name);
+  const clarifyingQuestion = stringOrNull(raw.clarifyingQuestion) ?? stringOrNull(raw.clarifying_question) ?? null;
   const messageToUser = stringOrNull(raw.messageToUser)
     ?? stringOrNull(raw.message)
     ?? stringOrNull(raw.diagnosis)
@@ -76,19 +92,22 @@ export function normalizeAnalysis(raw: RawAnalysis): NormalizedAnalysis {
   if (!isIdentified) {
     return {
       isIdentified: false,
+      confidenceScore,
       status: 'needs_info',
       category,
       brand: null,
       modelNumber: null,
       diagnosis: null,
-      nextQuestion: messageToUser,
+      nextQuestion: clarifyingQuestion ?? messageToUser,
       messageToUser,
+      clarifyingQuestion,
       contractorSearchQuery: null,
     };
   }
 
   return {
     isIdentified: true,
+    confidenceScore: 100,
     status: 'identified',
     category,
     brand,
@@ -96,19 +115,9 @@ export function normalizeAnalysis(raw: RawAnalysis): NormalizedAnalysis {
     diagnosis: messageToUser,
     nextQuestion: null,
     messageToUser,
+    clarifyingQuestion: null,
     contractorSearchQuery: searchQueryFrom(raw, category, brand, modelNumber),
   };
-}
-
-export function createMockAnalysis(_imageUrl: string): NormalizedAnalysis {
-  return normalizeAnalysis({
-    isIdentified: true,
-    category: 'general',
-    brand: null,
-    modelNumber: null,
-    messageToUser: 'I can see a home maintenance issue. Let me find qualified professionals nearby.',
-    contractorSearchQuery: 'home repair maintenance contractor',
-  });
 }
 
 /**
@@ -154,6 +163,7 @@ async function analyzeWithGemini(
   imageUrl: string,
   apiKey: string,
   model: string = DEFAULT_GEMINI_MODEL,
+  userContext?: string,
 ): Promise<NormalizedAnalysis> {
   const { base64, mimeType } = await fetchImageAsBase64(imageUrl);
 
@@ -171,7 +181,9 @@ async function analyzeWithGemini(
           role: 'user',
           parts: [
             { inlineData: { mimeType, data: base64 } },
-            { text: VISION_USER_PROMPT },
+            { text: userContext 
+              ? `${VISION_USER_PROMPT}\n\nThe user also provided this additional context: "${userContext}"` 
+              : VISION_USER_PROMPT },
           ],
         },
       ],
@@ -203,6 +215,7 @@ async function analyzeWithOpenRouter(
   imageUrl: string,
   apiKey: string,
   model: string = DEFAULT_OPENROUTER_MODEL,
+  userContext?: string,
 ): Promise<NormalizedAnalysis> {
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
@@ -223,7 +236,9 @@ async function analyzeWithOpenRouter(
         {
           role: 'user',
           content: [
-            { type: 'text', text: VISION_USER_PROMPT },
+            { type: 'text', text: userContext 
+              ? `${VISION_USER_PROMPT}\n\nThe user also provided this additional context: "${userContext}"` 
+              : VISION_USER_PROMPT },
             { type: 'image_url', image_url: { url: imageUrl } },
           ],
         },
@@ -247,7 +262,7 @@ async function analyzeWithOpenRouter(
 
 /**
  * Main entry point for image analysis.
- * Tries Gemini first, then OpenRouter, then falls back to mock.
+ * Tries Gemini first, then OpenRouter. No mock fallback.
  */
 export async function analyzeRepairImage(
   imageUrl: string,
@@ -256,17 +271,23 @@ export async function analyzeRepairImage(
     model?: string;
     geminiApiKey?: string;
     geminiModel?: string;
+    userContext?: string;
   } = {},
 ): Promise<NormalizedAnalysis> {
-  // Try Gemini Vision first (preferred — already have the API key)
+  const errors: string[] = [];
+
+  // Try Gemini Vision first (preferred)
   if (options.geminiApiKey) {
     try {
       return await analyzeWithGemini(
         imageUrl,
         options.geminiApiKey,
         options.geminiModel ?? DEFAULT_GEMINI_MODEL,
+        options.userContext,
       );
     } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      errors.push(`Gemini: ${msg}`);
       console.error('Gemini analysis failed, trying OpenRouter fallback:', error);
     }
   }
@@ -274,14 +295,19 @@ export async function analyzeRepairImage(
   // Try OpenRouter as fallback
   if (options.apiKey) {
     try {
-      return await analyzeWithOpenRouter(imageUrl, options.apiKey, options.model);
+      return await analyzeWithOpenRouter(imageUrl, options.apiKey, options.model, options.userContext);
     } catch (error) {
-      console.error('OpenRouter analysis failed, using mock:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      errors.push(`OpenRouter: ${msg}`);
+      console.error('OpenRouter analysis also failed:', error);
     }
   }
 
-  // Last resort: mock
-  return createMockAnalysis(imageUrl);
+  // No mock fallback — throw an error so the frontend can handle it gracefully
+  if (!options.geminiApiKey && !options.apiKey) {
+    throw new Error('No vision API keys configured. Please set GEMINI_API_KEY or OPENROUTER_API_KEY.');
+  }
+  throw new Error(`Image analysis failed. ${errors.join('; ')}`);
 }
 
 export function parseContractorReply(messageBody: string): {

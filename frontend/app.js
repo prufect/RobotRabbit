@@ -9,6 +9,7 @@ import { showContractorDetailModal } from './components/ContractorDetailModal.js
 import { createBookingConfirm } from './components/BookingConfirm.js';
 import { createPriceIntel } from './components/PriceIntel.js';
 import { createMessageCenter } from './components/MessageCenter.js';
+import { createImageScanOverlay } from './components/ImageScanOverlay.js';
 
 import {
   analyzeImage,
@@ -255,6 +256,10 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentUser = null;
   let authModalOverlay = null;
   let lastInputMode = 'text';
+  
+  // Clarification state — tracks when the AI needs more info about an uploaded image
+  let pendingClarification = null;
+  // { imageUrl, imageFile, urgency, previousAnalysis, scanOverlay, attemptCount }
   
   function generateId() {
     return `msg-${++msgIdCounter}`;
@@ -567,18 +572,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     lastInputMode = isVoice ? 'voice' : 'text';
     const id = generateId();
-    chatWindow.addMessage({ id, sender: 'user', text, imageUrl });
+    const userBubble = chatWindow.addMessage({ id, sender: 'user', text, imageUrl });
     saveMessage('user', text, imageUrl ? 'image' : 'text', imageUrl).catch(console.error);
     textInput.value = '';
     textInput.blur();
     toggleSendVoiceBtn(false);
     
-    await addAgentTyping();
-    
     const urgency = urgencyToggle.getLevel();
     
+    // Check if user is responding to a clarification question
+    if (pendingClarification && !imageUrl) {
+      await addAgentTyping();
+      handleClarificationResponse(text);
+      return;
+    }
+    
+    await addAgentTyping();
+    
     if (imageUrl) {
-      handleImageFlow(imageUrl, urgency, imageFile);
+      handleImageFlow(imageUrl, urgency, imageFile, userBubble);
     } else {
       handleTextFlow(text, urgency);
     }
@@ -586,26 +598,177 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // --- Core Application Flows ---
   
-  async function handleImageFlow(imageUrl, urgency, imageFile) {
+  async function handleImageFlow(imageUrl, urgency, imageFile, userBubble) {
+    // Attach the scanning overlay to the uploaded image in the chat
+    let scanOverlay = null;
+    const imageContainer = userBubble?.imageContainer;
+    
+    if (imageContainer) {
+      scanOverlay = createImageScanOverlay(imageContainer);
+    }
+    
+    // Start scan animation and API call in parallel
+    const scanAnimationPromise = scanOverlay ? scanOverlay.startScan() : wait(2500);
+    
+    let result;
+    let analysisError = null;
+    
+    const analysisPromise = analyzeImage(imageUrl, urgency, imageFile).catch(error => {
+      analysisError = error;
+      return null;
+    });
+    
+    // Wait for BOTH animation and API to complete
+    const [, analysisResult] = await Promise.all([scanAnimationPromise, analysisPromise]);
+    result = analysisResult;
+    
+    // Handle API error
+    if (analysisError || !result) {
+      if (scanOverlay) scanOverlay.showUnclear({ category: 'unknown' });
+      const message = analysisError?.message || 'I could not analyze this photo. Please try again.';
+      chatWindow.addMessage({ id: generateId(), sender: 'agent', text: message });
+      if (isAuthRequiredError(analysisError)) openAuthModal('sign-in');
+      return;
+    }
+    
+    const confidenceScore = result.confidenceScore ?? (result.isIdentified ? 100 : 50);
+    
+    // Confidence < 100: ask for clarification
+    if (confidenceScore < 100 || !result.isIdentified) {
+      if (scanOverlay) scanOverlay.showUnclear(result);
+      
+      // Store clarification state for follow-up
+      pendingClarification = {
+        imageUrl,
+        imageFile,
+        urgency,
+        previousAnalysis: result,
+        scanOverlay,
+        attemptCount: 1,
+      };
+      
+      // Show the clarifying question or a generic one
+      const question = result.clarifyingQuestion 
+        || result.messageToUser 
+        || "I'm having trouble identifying the issue in this photo. Could you describe what needs fixing?";
+      
+      const confidenceText = confidenceScore > 0 
+        ? ` (Confidence: ${confidenceScore}%)` 
+        : '';
+      
+      chatWindow.addMessage({ 
+        id: generateId(), 
+        sender: 'agent', 
+        text: question + confidenceText
+      });
+      saveMessage('assistant', question, 'clarification').catch(console.error);
+      chatWindow.scrollToBottom();
+      return;
+    }
+    
+    // Confidence is 100% — proceed with identification
+    if (scanOverlay) scanOverlay.showIdentified(result);
+    
+    // Clear any pending clarification
+    pendingClarification = null;
+    
+    const identifiedLabel = result.brand && result.modelNumber
+      ? `${result.brand} ${result.modelNumber}`
+      : result.brand
+        ? result.brand
+        : result.category
+          ? `${result.category.charAt(0).toUpperCase() + result.category.slice(1)} issue`
+          : 'Issue identified';
+    
     const activity = createAgentActivity(chatWindow);
-    const step1 = activity.addStep({ icon: '👁️', text: 'Analyzing image...', status: 'active' });
+    activity.addStep({ icon: '✅', text: `Identified: ${identifiedLabel}`, status: 'done' });
+    const step2 = activity.addStep({ icon: '🔍', text: 'Searching local professionals...', status: 'active' });
+    chatWindow.addMessage({ id: generateId(), sender: 'agent', text: result.messageToUser });
+    saveMessage('assistant', result.messageToUser, 'analysis').catch(console.error);
+    chatWindow.scrollToBottom();
+    
+    currentIssueContext = result;
+    await findAndPresentContractors(result.contractorSearchQuery, urgency, activity, step2);
+  }
+  
+  /**
+   * Handle user response to a clarification question.
+   * Re-analyze the image with additional user context.
+   */
+  async function handleClarificationResponse(userText) {
+    if (!pendingClarification) return;
+    
+    const { imageUrl, imageFile, urgency, scanOverlay, attemptCount } = pendingClarification;
+    const MAX_CLARIFICATION_ATTEMPTS = 3;
+    
+    // Show we're re-analyzing
+    const activity = createAgentActivity(chatWindow);
+    const step1 = activity.addStep({ icon: '🔄', text: 'Re-analyzing with your input...', status: 'active' });
     chatWindow.scrollToBottom();
     
     let result;
     try {
-      result = await analyzeImage(imageUrl, urgency, imageFile);
+      result = await analyzeImage(imageUrl, urgency, imageFile, userText);
     } catch (error) {
       activity.updateStep(step1, { icon: '!', status: 'pending' });
-      const message = error.message || 'I could not send this photo to the backend.';
-      chatWindow.addMessage({ id: generateId(), sender: 'agent', text: message });
-      if (isAuthRequiredError(error)) openAuthModal('sign-in');
+      chatWindow.addMessage({ id: generateId(), sender: 'agent', text: error.message || 'Re-analysis failed. Please try uploading a new photo.' });
+      pendingClarification = null;
       return;
     }
     
-    if (!result.isIdentified) {
+    const confidenceScore = result.confidenceScore ?? (result.isIdentified ? 100 : 50);
+    
+    if (confidenceScore < 100 || !result.isIdentified) {
       activity.updateStep(step1, { icon: '❓', status: 'pending' });
-      chatWindow.addMessage({ id: generateId(), sender: 'agent', text: result.messageToUser });
+      
+      // Check if we've exceeded max attempts
+      if (attemptCount >= MAX_CLARIFICATION_ATTEMPTS) {
+        pendingClarification = null;
+        
+        // If we have some category info, use it anyway
+        if (result.category && result.category !== 'unknown') {
+          const fallbackMsg = `Based on what you've told me, this seems like a ${result.category} issue. Let me find professionals for you.`;
+          chatWindow.addMessage({ id: generateId(), sender: 'agent', text: fallbackMsg });
+          saveMessage('assistant', fallbackMsg, 'analysis').catch(console.error);
+          
+          currentIssueContext = result;
+          const searchQuery = result.contractorSearchQuery || `${result.category} repair contractor`;
+          const step2 = activity.addStep({ icon: '🔍', text: 'Searching local professionals...', status: 'active' });
+          await findAndPresentContractors(searchQuery, urgency, activity, step2);
+        } else {
+          chatWindow.addMessage({ id: generateId(), sender: 'agent', text: "I'm sorry, I still can't identify the issue. Could you try uploading a clearer photo or use the text/voice input to describe what needs fixing?" });
+        }
+        return;
+      }
+      
+      // Update state for next attempt
+      pendingClarification = {
+        ...pendingClarification,
+        previousAnalysis: result,
+        attemptCount: attemptCount + 1,
+      };
+      
+      const question = result.clarifyingQuestion 
+        || result.messageToUser 
+        || "I still need a bit more information. Can you tell me more about what's wrong?";
+      
+      chatWindow.addMessage({ 
+        id: generateId(), 
+        sender: 'agent', 
+        text: `${question} (Confidence: ${confidenceScore}%, attempt ${attemptCount + 1}/${MAX_CLARIFICATION_ATTEMPTS})`
+      });
+      saveMessage('assistant', question, 'clarification').catch(console.error);
+      chatWindow.scrollToBottom();
       return;
+    }
+    
+    // Confidence is 100% — identified!
+    activity.updateStep(step1, { icon: '✅', text: 'Issue confirmed!', status: 'done' });
+    pendingClarification = null;
+    
+    // Update scan overlay if still available
+    if (scanOverlay) {
+      try { scanOverlay.showIdentified(result); } catch (_) { /* overlay may have been removed */ }
     }
     
     const identifiedLabel = result.brand && result.modelNumber
@@ -615,9 +778,11 @@ document.addEventListener('DOMContentLoaded', () => {
         : result.category
           ? `${result.category.charAt(0).toUpperCase() + result.category.slice(1)} issue`
           : 'Issue identified';
-    activity.updateStep(step1, { icon: '✅', text: `Identified: ${identifiedLabel}`, status: 'done' });
+    
+    activity.addStep({ icon: '✅', text: `Identified: ${identifiedLabel}`, status: 'done' });
     const step2 = activity.addStep({ icon: '🔍', text: 'Searching local professionals...', status: 'active' });
     chatWindow.addMessage({ id: generateId(), sender: 'agent', text: result.messageToUser });
+    saveMessage('assistant', result.messageToUser, 'analysis').catch(console.error);
     chatWindow.scrollToBottom();
     
     currentIssueContext = result;
