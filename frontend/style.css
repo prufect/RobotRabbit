@@ -1266,3 +1266,47 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+.dragbar-container {
+  padding: 8px 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  margin-top: -8px;
+  margin-bottom: 4px;
+}
+
+.dragbar-pill {
+  width: 40px;
+  height: 6px;
+  background: var(--text-muted);
+  border-radius: 4px;
+  opacity: 0.5;
+  transition: opacity 0.3s, transform 0.3s, background 0.3s;
+}
+
+.dragbar-container:hover .dragbar-pill {
+  opacity: 1;
+  background: var(--accent-primary);
+}
+
+.bottom-bar {
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.bottom-bar.collapsed .bottom-bar-content {
+  display: none;
+}
+
+.bottom-bar.collapsed .dragbar-pill {
+  width: 60px;
+  height: 8px;
+  background: var(--accent-primary);
+  opacity: 0.8;
+}
+
+.bottom-bar.collapsed .dragbar-container {
+  padding: 12px 0;
+  margin-bottom: -4px;
+}

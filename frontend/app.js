@@ -68,10 +68,24 @@ document.addEventListener('DOMContentLoaded', () => {
   bottomBar.className = 'bottom-bar glass-solid';
   bottomBarWrapper.appendChild(bottomBar);
   
+  // Dragbar for toggling
+  const dragbarContainer = document.createElement('div');
+  dragbarContainer.className = 'dragbar-container';
+  dragbarContainer.innerHTML = `<div class="dragbar-pill"></div>`;
+  bottomBar.appendChild(dragbarContainer);
+
+  const bottomBarContent = document.createElement('div');
+  bottomBarContent.className = 'bottom-bar-content';
+  bottomBar.appendChild(bottomBarContent);
+
+  dragbarContainer.addEventListener('click', () => {
+    bottomBar.classList.toggle('collapsed');
+  });
+
   // 2. Initialize Components
   
   const chatWindow = createChatWindow(mainContent);
-  const urgencyToggle = createUrgencyToggle(bottomBar);
+  const urgencyToggle = createUrgencyToggle(bottomBarContent);
   const bookingConfirm = createBookingConfirm(appContainer);
   
   // Setup Input Row in Bottom Bar
@@ -103,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
   inputRow.appendChild(textInput);
   inputRow.appendChild(sendBtn);
   inputRow.appendChild(voiceContainer);
-  bottomBar.appendChild(inputRow);
+  bottomBarContent.appendChild(inputRow);
   
   // Create Onboarding Splash
   createOnboardingSplash(appContainer);
