@@ -17,6 +17,7 @@
 # Local app/runtime artifacts
 .env
 .env.local
+/.vercel/
 node_modules/
 dist/
 .worktrees/
