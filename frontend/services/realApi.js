@@ -1,14 +1,13 @@
 /**
  * Real API client — bridges the Track 1 Frontend to the Track 2 & 3 Backend services.
  *
- * In production (Vercel), URLs default to '' which makes all fetches relative
- * (e.g. /api/analyze), routed via vercel.json rewrites to the deployed backend.
- * For local dev, set VITE_BACKEND_URL=http://localhost:3002 and
- * VITE_INTEGRATIONS_URL=http://localhost:3003 in .env.
+ * Default URLs point to the deployed Vercel backends directly (cross-origin,
+ * CORS is enabled on both). Override via VITE_BACKEND_URL / VITE_INTEGRATIONS_URL
+ * for local dev (e.g. http://localhost:3002 / http://localhost:3003).
  */
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || '';
-const INTEGRATIONS_URL = import.meta.env.VITE_INTEGRATIONS_URL || '';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://track2aiagent.vercel.app';
+const INTEGRATIONS_URL = import.meta.env.VITE_INTEGRATIONS_URL || 'https://track3integrations.vercel.app';
 
 // Generate a unique session ID for this page load
 const conversationId = 'session-' + Math.random().toString(36).substring(2, 9);
