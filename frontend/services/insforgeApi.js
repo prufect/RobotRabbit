@@ -1,9 +1,10 @@
-import { createClient } from 'https://esm.sh/@insforge/sdk@1.3.1';
+import { createClient } from '@insforge/sdk';
 import * as mockApi from './mockApi.js';
 import * as realApi from './realApi.js';
 
 const DEFAULT_LOCATION = 'San Francisco, CA';
 const DEFAULT_BASE_URL = 'https://pzv974n7.us-east.insforge.app';
+const REPAIR_PHOTO_BUCKET = 'repair-photos';
 
 export class AuthRequiredError extends Error {
   constructor(message = 'Sign in to connect this repair request to your InsForge backend.') {
@@ -107,6 +108,79 @@ function assertSdkResult(result, fallbackMessage) {
   return result.data;
 }
 
+function isPresignedStorageUploadError(error) {
+  return error?.statusCode === 400
+    && error?.error === 'STORAGE_ERROR'
+    && /upload to storage failed|presigned/i.test(error.message ?? '');
+}
+
+function storageObjectUrl(baseUrl, bucketName, key) {
+  return `${baseUrl.replace(/\/$/, '')}/api/storage/buckets/${bucketName}/objects/${encodeURIComponent(key)}`;
+}
+
+function normalizeStorageData(data, { baseUrl, bucketName, key, file }) {
+  const normalizedKey = data?.key ?? key;
+  const normalizedUrl = data?.url
+    ? new URL(data.url, baseUrl).toString()
+    : storageObjectUrl(baseUrl, bucketName, normalizedKey);
+
+  return {
+    bucket: data?.bucket ?? bucketName,
+    key: normalizedKey,
+    size: data?.size ?? file.size,
+    mimeType: data?.mimeType ?? file.type ?? 'application/octet-stream',
+    uploadedAt: data?.uploadedAt ?? new Date().toISOString(),
+    url: normalizedUrl,
+  };
+}
+
+async function uploadDirectlyThroughInsForge(insforge, config, key, file) {
+  const http = insforge.getHttpClient?.();
+  if (!http?.request) {
+    throw new Error('InsForge direct upload fallback is unavailable in this SDK client.');
+  }
+
+  const formData = new FormData();
+  formData.append('file', file, file?.name ?? key.split('/').pop() ?? 'photo');
+
+  const data = await http.request(
+    'PUT',
+    `/api/storage/buckets/${REPAIR_PHOTO_BUCKET}/objects/${encodeURIComponent(key)}`,
+    {
+      body: formData,
+      headers: {},
+    },
+  );
+
+  return normalizeStorageData(data, {
+    baseUrl: config.baseUrl,
+    bucketName: REPAIR_PHOTO_BUCKET,
+    key,
+    file,
+  });
+}
+
+async function uploadRepairPhoto(insforge, config, key, file) {
+  const upload = await insforge.storage
+    .from(REPAIR_PHOTO_BUCKET)
+    .upload(key, file);
+
+  if (!upload?.error) return upload;
+  if (!isPresignedStorageUploadError(upload.error)) return upload;
+
+  try {
+    const data = await uploadDirectlyThroughInsForge(insforge, config, key, file);
+    return { data, error: null };
+  } catch (fallbackError) {
+    const primaryMessage = upload.error.message || 'Presigned upload failed';
+    const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+    const error = new Error(`${primaryMessage}. Direct upload fallback also failed: ${fallbackMessage}`);
+    error.code = 'STORAGE_UPLOAD_FAILED';
+    error.cause = fallbackError;
+    return { data: null, error };
+  }
+}
+
 export function createRepairApi(options = {}) {
   const config = {
     ...getRuntimeConfig(),
@@ -186,9 +260,8 @@ export function createRepairApi(options = {}) {
 
     const user = await requireCurrentUser();
     const requestId = cryptoImpl.randomUUID();
-    const upload = await insforge.storage
-      .from('repair-photos')
-      .upload(`users/${user.id}/requests/${requestId}/photo.${extensionFrom(file)}`, file);
+    const imageKey = `users/${user.id}/requests/${requestId}/photo.${extensionFrom(file)}`;
+    const upload = await uploadRepairPhoto(insforge, config, imageKey, file);
 
     assertSdkResult(upload, 'Photo upload did not return storage metadata.');
 
