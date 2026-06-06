@@ -244,12 +244,13 @@ body {
    5. Onboarding Splash
    ========================================================================== */
 .onboarding-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 1000;
   display: flex;
   flex-direction: column;
   background: linear-gradient(135deg, #e5e5f5, #f6e5e8);
+  overflow: hidden;
 }
 
 .splash-top-orb {
@@ -776,7 +777,7 @@ body {
    13. Booking Confirmation
    ========================================================================== */
 .booking-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 2000;
   display: flex;
@@ -885,7 +886,7 @@ body {
    13b. Auth
    ========================================================================== */
 .auth-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 2100;
   display: flex;
