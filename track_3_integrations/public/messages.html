@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Message Center · AI Maintenance Agent</title>
+  <style>
+    :root { --bg:#0b141a; --panel:#111b21; --list:#202c33; --out:#005c4b; --in:#202c33; --txt:#e9edef; --muted:#8696a0; --accent:#00a884; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; background:var(--bg); color:var(--txt); height:100vh; display:flex; flex-direction:column; }
+    header { background:var(--panel); padding:14px 18px; display:flex; align-items:center; gap:10px; border-bottom:1px solid #000; }
+    header h1 { font-size:16px; margin:0; font-weight:600; }
+    header .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); }
+    header .meta { margin-left:auto; font-size:12px; color:var(--muted); }
+    .layout { flex:1; display:flex; min-height:0; }
+    .sidebar { width:320px; background:var(--panel); border-right:1px solid #000; overflow-y:auto; }
+    .conv { padding:12px 16px; border-bottom:1px solid #000; cursor:pointer; display:flex; flex-direction:column; gap:3px; }
+    .conv:hover, .conv.active { background:var(--list); }
+    .conv .top { display:flex; justify-content:space-between; align-items:baseline; }
+    .conv .name { font-weight:600; font-size:14px; }
+    .conv .time { font-size:11px; color:var(--muted); }
+    .conv .preview { font-size:12px; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .conv .phone { font-size:11px; color:var(--muted); }
+    .thread { flex:1; display:flex; flex-direction:column; min-width:0; background:#0b141a; }
+    .thread .head { background:var(--panel); padding:12px 18px; border-bottom:1px solid #000; }
+    .thread .head .name { font-weight:600; }
+    .thread .head .phone { font-size:12px; color:var(--muted); }
+    .bubbles { flex:1; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:8px; }
+    .row { display:flex; }
+    .row.outbound { justify-content:flex-end; }
+    .bubble { max-width:70%; padding:8px 11px; border-radius:8px; font-size:13.5px; line-height:1.4; white-space:pre-wrap; word-wrap:break-word; }
+    .outbound .bubble { background:var(--out); border-top-right-radius:2px; }
+    .inbound .bubble { background:var(--in); border-top-left-radius:2px; }
+    .bubble .kind { display:inline-block; font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin-bottom:3px; }
+    .bubble .ts { font-size:10px; color:var(--muted); text-align:right; margin-top:3px; }
+    .empty { margin:auto; color:var(--muted); text-align:center; padding:40px; }
+    b, strong { font-weight:700; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="dot"></span>
+    <h1>Message Center</h1>
+    <span class="meta" id="meta">connecting…</span>
+  </header>
+  <div class="layout">
+    <div class="sidebar" id="sidebar"></div>
+    <div class="thread">
+      <div class="head" id="threadHead"><span class="name">Select a conversation</span></div>
+      <div class="bubbles" id="bubbles"><div class="empty">No conversation selected.</div></div>
+    </div>
+  </div>
+
+  <script>
+    let active = null;          // selected phone
+    let convs = [];
+
+    const esc = (s) => (s ?? '').replace(/[&<>]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;' }[c]));
+    // WhatsApp-style *bold* -> <b>
+    const fmt = (s) => esc(s).replace(/\*([^*]+)\*/g, '<b>$1</b>');
+    const time = (iso) => iso ? new Date(iso).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
+
+    function renderSidebar() {
+      const el = document.getElementById('sidebar');
+      if (!convs.length) { el.innerHTML = '<div class="empty">No messages yet.<br>Fire off a notify to populate.</div>'; return; }
+      el.innerHTML = convs.map((c) => `
+        <div class="conv ${c.phone === active ? 'active' : ''}" onclick="select('${c.phone}')">
+          <div class="top"><span class="name">${esc(c.name || c.phone)}</span><span class="time">${time(c.lastMessageAt)}</span></div>
+          <div class="preview">${esc(c.lastMessage || '')}</div>
+          <div class="phone">${esc(c.phone)} · ${c.messageCount} msg</div>
+        </div>`).join('');
+    }
+
+    function renderThread() {
+      const head = document.getElementById('threadHead');
+      const box = document.getElementById('bubbles');
+      const c = convs.find((x) => x.phone === active);
+      if (!c) { head.innerHTML = '<span class="name">Select a conversation</span>'; box.innerHTML = '<div class="empty">No conversation selected.</div>'; return; }
+      head.innerHTML = `<div class="name">${esc(c.name || c.phone)}</div><div class="phone">${esc(c.phone)}</div>`;
+      box.innerHTML = c.messages.map((m) => `
+        <div class="row ${m.direction}">
+          <div class="bubble">
+            <span class="kind">${esc(m.kind)} · ${esc(m.channel)}</span><br>
+            ${fmt(m.body)}
+            <div class="ts">${time(m.at)}</div>
+          </div>
+        </div>`).join('');
+      box.scrollTop = box.scrollHeight;
+    }
+
+    window.select = (phone) => { active = phone; renderSidebar(); renderThread(); };
+
+    async function poll() {
+      try {
+        const [h, c] = await Promise.all([
+          fetch('/health').then((r) => r.json()),
+          fetch('/api/conversations').then((r) => r.json()),
+        ]);
+        document.getElementById('meta').textContent =
+          `db:${h.mode.database} · twilio:${h.mode.twilio} · ${c.conversations.length} conversations`;
+        convs = c.conversations;
+        if (!active && convs.length) active = convs[0].phone;
+        renderSidebar();
+        renderThread();
+      } catch (e) {
+        document.getElementById('meta').textContent = 'offline — retrying…';
+      }
+    }
+    poll();
+    setInterval(poll, 2000); // live refresh
+  </script>
+</body>
+</html>

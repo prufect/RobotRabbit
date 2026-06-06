@@ -1,7 +1,14 @@
 import express from 'express';
-import { config, isSerperLive, isTwilioLive, isTelegramLive } from './config.js';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import { config, isSerperLive, isTwilioLive, isTelegramLive, isDbLive } from './config.js';
 import { searchContractors } from './search.js';
-import { notifyContractors } from './notify.js';
+import { notifyContractors, deliver } from './notify.js';
+import { parseReply, rankQuotes } from './quotes.js';
+import { buildWinnerMessage, buildDeclineMessage } from './templates.js';
+import { recordMessage, getConversations, getConversation } from './store.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 
@@ -17,19 +24,17 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: false })); // Twilio webhooks post urlencoded
+// Serve the live Message Center UI at /messages (and its assets).
+app.use(express.static(join(__dirname, '..', 'public')));
 
 // In-memory store of contractor replies, keyed by phone. Track 1 can poll
 // GET /api/responses to power CUJ 3 ("Book Now") without a DB dependency.
 const responses = [];
 
-// ── Phone → conversationId mapping ──────────────────────────────────────────
-// Populated when POST /api/notify-contractors is called (Track 2 sends
-// X-Conversation-Id header). Used to route inbound Twilio webhook replies
-// back to the correct Track 2 negotiation session.
-const phoneToConversation = new Map();
-
-// ── Phone → contractor name mapping ─────────────────────────────────────────
-const phoneToName = new Map();
+// Registry of who we've contacted (phone -> {name}) plus the latest job context,
+// so booking/decline messages can address contractors by name and reference the job.
+const contractorsByPhone = new Map();
+let lastIssue = {};
 
 // --- Health / status --------------------------------------------------------
 app.get('/health', (_req, res) => {
@@ -41,6 +46,7 @@ app.get('/health', (_req, res) => {
       serper: isSerperLive() ? 'live' : 'mock',
       twilio: isTwilioLive() ? 'live' : 'mock',
       telegram: isTelegramLive() ? 'live' : 'mock',
+      database: isDbLive() ? 'postgres' : 'in-memory',
     },
   });
 });
@@ -73,22 +79,30 @@ app.post('/api/notify-contractors', async (req, res) => {
     return res.status(400).json({ status: 'error', message: 'contractors[] is required' });
   }
 
-  // Store conversationId → phone mapping so we can route Twilio replies back
-  const conversationId = req.headers['x-conversation-id'] || '';
-  if (conversationId) {
+  try {
+    // The Track 2 conversationId (sent via header or body) doubles as the
+    // requestId that threads all messages of one job together. One registry
+    // keyed by phone now serves both Track 2 forwarding and the Message Center.
+    const conversationId = req.headers['x-conversation-id'] || req.body.conversationId || '';
+    const requestId = conversationId || req.body.requestId || null;
+    lastIssue = issueDetails || {};
     for (const c of contractors) {
       if (c.phone) {
-        phoneToConversation.set(c.phone, conversationId);
-        phoneToName.set(c.phone, c.name || 'Unknown Contractor');
+        contractorsByPhone.set(c.phone, {
+          name: c.name || 'Unknown Contractor',
+          telegramChatId: c.telegramChatId,
+          requestId,
+          conversationId: conversationId || null,
+        });
       }
     }
-    console.log(`[notify] Mapped ${contractors.length} phones → conversationId: ${conversationId}`);
-  }
-
-  try {
+    if (conversationId) {
+      console.log(`[notify] Mapped ${contractors.length} phones → conversationId: ${conversationId}`);
+    }
     const { notifiedCount, results, errors } = await notifyContractors(
       contractors,
-      issueDetails || {}
+      issueDetails || {},
+      { locale: req.body.locale, requestId }
     );
     return res.json({ status: 'success', notifiedCount, results, errors });
   } catch (err) {
@@ -103,22 +117,37 @@ app.post('/api/notify-contractors', async (req, res) => {
 app.post('/webhooks/twilio', async (req, res) => {
   const from = (req.body.From || '').replace('whatsapp:', '');
   const body = req.body.Body || '';
-  const available = /\byes\b/i.test(body);
-  const feeMatch = body.match(/\$\s?(\d+(?:\.\d{1,2})?)/);
+  const parsed = parseReply(body);
+  const known = contractorsByPhone.get(from) || {};
 
   const reply = {
     phone: from,
+    name: known.name || null,
     body,
-    available,
-    quote: feeMatch ? Number(feeMatch[1]) : null,
+    ...parsed, // available, quote, etaMinutes, etaText
     receivedAt: new Date().toISOString(),
   };
+  // De-dupe: a contractor's latest reply replaces their previous one.
+  const idx = responses.findIndex((r) => r.phone === from);
+  if (idx !== -1) responses.splice(idx, 1);
   responses.unshift(reply);
+
+  // Capture the inbound message into the Message Center.
+  const channel = (req.body.From || '').startsWith('whatsapp:') ? 'whatsapp' : 'sms';
+  recordMessage({
+    requestId: known.requestId || null,
+    phone: from,
+    name: known.name || null,
+    direction: 'inbound',
+    channel,
+    kind: 'reply',
+    body,
+  });
   console.log('[webhook] contractor reply:', reply);
 
   // ── Forward to Track 2's /api/contractor-reply ──────────────────────────
-  const conversationId = phoneToConversation.get(from);
-  const contractorName = phoneToName.get(from) || 'Unknown';
+  const conversationId = known.conversationId;
+  const contractorName = known.name || 'Unknown';
 
   if (conversationId && config.track2BaseUrl) {
     try {
@@ -149,7 +178,7 @@ app.post('/webhooks/twilio', async (req, res) => {
   res.set('Content-Type', 'text/xml');
   res.send(
     `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${
-      available ? 'Thanks! The homeowner has been notified. 🎉' : 'Thanks for the update.'
+      parsed.available ? 'Thanks! The homeowner has been notified. 🎉' : 'Thanks for the update.'
     }</Message></Response>`
   );
 });
@@ -159,12 +188,77 @@ app.get('/api/responses', (_req, res) => {
   res.json({ status: 'success', responses });
 });
 
+// --- GET /api/best-quote ----------------------------------------------------
+// Ranks available replies (cheapest first, soonest ETA breaks ties).
+app.get('/api/best-quote', (_req, res) => {
+  const { ranked, best } = rankQuotes(responses);
+  res.json({ status: 'success', best, ranked });
+});
+
+// --- POST /api/book ---------------------------------------------------------
+// Books the winning contractor: messages them "you got the job" and politely
+// declines everyone else who replied. Body: { phone, locale? }
+app.post('/api/book', async (req, res) => {
+  const { phone, locale } = req.body || {};
+  if (!phone) {
+    return res.status(400).json({ status: 'error', message: 'phone is required' });
+  }
+  const winnerReply = responses.find((r) => r.phone === phone);
+  if (!winnerReply) {
+    return res.status(404).json({ status: 'error', message: `no reply on file for ${phone}` });
+  }
+
+  const winner = { phone, name: winnerReply.name, ...(contractorsByPhone.get(phone) || {}) };
+  const losers = responses
+    .filter((r) => r.phone !== phone && r.available)
+    .map((r) => ({ phone: r.phone, name: r.name, ...(contractorsByPhone.get(r.phone) || {}) }));
+
+  try {
+    const reqId = contractorsByPhone.get(phone)?.requestId || null;
+    const [winnerSend, ...loserSends] = await Promise.all([
+      deliver(winner, (channel) => buildWinnerMessage(winner, lastIssue, { channel, locale }), {
+        requestId: reqId,
+        kind: 'booking',
+      }),
+      ...losers.map((l) =>
+        deliver(l, (channel) => buildDeclineMessage(l, lastIssue, { channel, locale }), {
+          requestId: contractorsByPhone.get(l.phone)?.requestId || null,
+          kind: 'decline',
+        })
+      ),
+    ]);
+
+    return res.json({
+      status: 'success',
+      booked: { ...winner, quote: winnerReply.quote, eta: winnerReply.etaText, channel: winnerSend.channel },
+      declinedCount: loserSends.length,
+    });
+  } catch (err) {
+    console.error('[/api/book] error:', err);
+    return res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
+// --- Message Center ---------------------------------------------------------
+// Full conversation thread between the agent and contractors (both directions,
+// all channels). Powers the message-center UI at /messages and Track 1.
+app.get('/api/conversations', (_req, res) => {
+  res.json({ status: 'success', conversations: getConversations() });
+});
+
+app.get('/api/conversations/:phone', (req, res) => {
+  const messages = getConversation(req.params.phone);
+  res.json({ status: 'success', phone: req.params.phone, messages });
+});
+
 app.listen(config.port, () => {
   console.log(`Track 3 Integrations service listening on :${config.port}`);
+  console.log(`Message Center UI -> http://localhost:${config.port}/messages.html`);
   console.log(
     `Modes -> serper:${isSerperLive() ? 'live' : 'mock'} ` +
       `twilio:${isTwilioLive() ? 'live' : 'mock'} ` +
-      `telegram:${isTelegramLive() ? 'live' : 'mock'}` +
+      `telegram:${isTelegramLive() ? 'live' : 'mock'} ` +
+      `db:${isDbLive() ? 'postgres' : 'in-memory'}` +
       (config.mockMode ? ' (MOCK_MODE forced)' : '')
   );
   if (config.track2BaseUrl) {

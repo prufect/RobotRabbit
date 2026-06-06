@@ -8,12 +8,14 @@ import { createContractorCards } from './components/ContractorCard.js';
 import { showContractorDetailModal } from './components/ContractorDetailModal.js';
 import { createBookingConfirm } from './components/BookingConfirm.js';
 import { createPriceIntel } from './components/PriceIntel.js';
+import { createMessageCenter } from './components/MessageCenter.js';
 
 import {
   analyzeImage,
   analyzeVoice,
   searchContractors,
   negotiateAndBook,
+  getConversations,
   getCurrentUser,
   signIn,
   signUp,
@@ -63,6 +65,10 @@ document.addEventListener('DOMContentLoaded', () => {
   `;
   appContainer.appendChild(header);
   const authStatus = header.querySelector('#auth-status');
+
+  // Message Center — live agent ↔ contractor conversations (Track 3).
+  const messageCenter = createMessageCenter({ getConversations });
+  header.insertBefore(messageCenter.button, authStatus);
   
   // Main Content Area
   const mainContent = document.createElement('main');

@@ -10,6 +10,10 @@ export const config = {
   // Track 2 AI Agent — for forwarding contractor replies
   track2BaseUrl: process.env.TRACK2_BASE_URL || '',
 
+  // Track 4 Postgres (InsForge). When set, messages persist to the DB in
+  // addition to the always-on in-memory store that powers the live UI.
+  databaseUrl: process.env.DATABASE_URL || '',
+
   serperApiKey: process.env.SERPER_API_KEY || '',
 
   twilio: {
@@ -30,3 +34,4 @@ export const isTwilioLive = () =>
   !config.mockMode && Boolean(config.twilio.accountSid && config.twilio.authToken);
 export const isTelegramLive = () =>
   !config.mockMode && Boolean(config.telegram.botToken);
+export const isDbLive = () => Boolean(config.databaseUrl);

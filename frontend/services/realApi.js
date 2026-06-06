@@ -186,6 +186,22 @@ export async function* negotiateAndBook(contractors, userPreferences) {
 
 
 /**
+ * Message Center: fetch all agent <-> contractor conversations from Track 3.
+ * Returns [] on any failure so the UI degrades gracefully.
+ */
+export async function getConversations() {
+  try {
+    const response = await fetch(`${INTEGRATIONS_URL}/api/conversations`);
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data.conversations) ? data.conversations : [];
+  } catch (err) {
+    console.warn('getConversations failed:', err.message);
+    return [];
+  }
+}
+
+/**
  * Handle voice / text queries
  */
 export async function analyzeVoice(transcript) {
