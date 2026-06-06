@@ -16,6 +16,7 @@ import {
   searchContractors,
   negotiateAndBook,
   getConversations,
+  getConversationMessages,
   getCurrentUser,
   signIn,
   signUp,
@@ -61,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const authStatus = header.querySelector('#auth-status');
 
   // Message Center — live agent ↔ contractor conversations.
-  const messageCenter = createMessageCenter({ getConversations });
+  const messageCenter = createMessageCenter({ getConversations, getConversationMessages });
   header.insertBefore(messageCenter.button, authStatus);
   
   // Main Content Area
@@ -666,6 +667,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     saveMessage('assistant', negMsg).catch(console.error);
     
+    // Immediately refresh the Message Center so new conversations appear
+    messageCenter.refresh();
+    
     const mcToggle = document.querySelector('.mc-toggle');
     if (mcToggle) {
       mcToggle.style.animation = 'none';
@@ -699,6 +703,9 @@ document.addEventListener('DOMContentLoaded', () => {
       chatWindow.addMessage({ id: generateId(), sender: 'agent', text: error.message || 'Negotiation failed.' });
       return;
     }
+    
+    // Refresh Message Center after negotiation completes
+    messageCenter.refresh();
     
     if (finalBooking) {
       await wait(1000);

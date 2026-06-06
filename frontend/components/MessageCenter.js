@@ -1,13 +1,16 @@
 /**
- * Message Center panel — shows the live agent <-> service-provider conversations
- * for the active repair request. Slide-over from the right, polls while open,
+ * Message Center panel — shows the live agent ↔ service-provider conversations
+ * across ALL repair requests. Slide-over from the right, polls while open,
  * with a header toggle button that surfaces an unread-style count.
  *
+ * Conversations are deduplicated by contractor — if the same contractor is
+ * contacted across multiple repair requests, all messages appear in one thread.
+ *
  * Usage:
- *   const mc = createMessageCenter({ getConversations });
+ *   const mc = createMessageCenter({ getConversations, getConversationMessages });
  *   headerEl.appendChild(mc.button);   // the toggle chip
  */
-export function createMessageCenter({ getConversations }) {
+export function createMessageCenter({ getConversations, getConversationMessages }) {
   // --- Toggle button (lives in the header) ---
   const button = document.createElement('button');
   button.type = 'button';
@@ -47,12 +50,18 @@ export function createMessageCenter({ getConversations }) {
   const body = overlay.querySelector('.mc-body');
 
   let convs = [];
-  let activePhone = null;
+  let activeConvId = null;   // conversation ID for thread view
+  let activePhone = null;    // fallback key for legacy convs without conversationId
   let pollTimer = null;
 
   const esc = (s) => (s ?? '').toString().replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-  const fmt = (s) => esc(s).replace(/\*([^*]+)\*/g, '<b>$1</b>').replace(/\n/g, '<br>');
+  const fmt = (s) => esc(s).replace(/\*([^*]+)\*/g, '<b>$1</b>').replace(/\\n/g, '<br>');
   const time = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
+  const date = (iso) => (iso ? new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '');
+
+  function convKey(c) {
+    return c.conversationId ?? c.phone ?? c.name;
+  }
 
   function renderList() {
     backBtn.hidden = true;
@@ -61,49 +70,85 @@ export function createMessageCenter({ getConversations }) {
       return;
     }
     body.innerHTML = `<div class="mc-list">${convs.map((c) => `
-      <button class="mc-conv" data-phone="${esc(c.phone)}">
+      <button class="mc-conv${(c.unreadCount ?? 0) > 0 ? ' mc-conv-unread' : ''}" data-conv-id="${esc(convKey(c))}">
         <div class="mc-conv-top">
           <span class="mc-name">${esc(c.name || c.phone)}</span>
           <span class="mc-time">${time(c.lastMessageAt)}</span>
         </div>
         <div class="mc-preview">${esc(c.lastMessage || '')}</div>
-        <div class="mc-meta">${esc(c.phone)} · ${c.messageCount} msg</div>
+        <div class="mc-meta-row">
+          <span class="mc-meta">${c.messageCount} msg${c.messageCount !== 1 ? 's' : ''}</span>
+          ${(c.unreadCount ?? 0) > 0 ? `<span class="mc-unread-dot">${c.unreadCount}</span>` : ''}
+        </div>
       </button>`).join('')}</div>`;
     body.querySelectorAll('.mc-conv').forEach((el) =>
-      el.addEventListener('click', () => { activePhone = el.dataset.phone; renderThread(); })
+      el.addEventListener('click', () => {
+        const key = el.dataset.convId;
+        const match = convs.find((c) => convKey(c) === key);
+        activeConvId = match?.conversationId ?? null;
+        activePhone = match?.phone ?? key;
+        renderThread();
+      })
     );
   }
 
   function renderThread() {
-    const c = convs.find((x) => x.phone === activePhone);
+    const c = convs.find((x) =>
+      (activeConvId && x.conversationId === activeConvId) ||
+      (!activeConvId && x.phone === activePhone)
+    );
     if (!c) return renderList();
     backBtn.hidden = false;
-    body.innerHTML = `
-      <div class="mc-thread-head">
-        <strong>${esc(c.name || c.phone)}</strong>
-        <span>${esc(c.phone)}</span>
-      </div>
-      <div class="mc-bubbles">${c.messages.map((m) => `
+
+    // Group messages by request_id to show context separators
+    let lastRequestId = null;
+    const messagesHtml = c.messages.map((m) => {
+      let separator = '';
+      if (m.requestId && m.requestId !== lastRequestId && lastRequestId !== null) {
+        separator = `<div class="mc-request-divider"><span>New repair request · ${date(m.at)}</span></div>`;
+      }
+      lastRequestId = m.requestId || lastRequestId;
+
+      return `${separator}
         <div class="mc-row ${m.direction}">
           <div class="mc-bubble">
-            <span class="mc-kind">${esc(m.kind)} · ${esc(m.channel)}</span>
+            <span class="mc-kind">${esc(m.kind)}${m.channel ? ' · ' + esc(m.channel) : ''}</span>
             <div class="mc-text">${fmt(m.body)}</div>
             <span class="mc-ts">${time(m.at)}</span>
           </div>
-        </div>`).join('')}</div>`;
+        </div>`;
+    }).join('');
+
+    body.innerHTML = `
+      <div class="mc-thread-head">
+        <strong>${esc(c.name || c.phone)}</strong>
+        <span>${esc(c.phone ?? '')}${c.contractorId ? ' · Linked' : ''}</span>
+      </div>
+      <div class="mc-bubbles">${messagesHtml}</div>`;
     const bubbles = body.querySelector('.mc-bubbles');
     if (bubbles) bubbles.scrollTop = bubbles.scrollHeight;
   }
 
   function render() {
-    if (activePhone && convs.some((c) => c.phone === activePhone)) renderThread();
-    else { activePhone = null; renderList(); }
+    if (activeConvId || activePhone) {
+      const match = convs.some((c) =>
+        (activeConvId && c.conversationId === activeConvId) ||
+        (!activeConvId && c.phone === activePhone)
+      );
+      if (match) return renderThread();
+    }
+    activeConvId = null;
+    activePhone = null;
+    renderList();
   }
 
   function updateBadge() {
-    const n = convs.length;
+    const totalUnread = convs.reduce((sum, c) => sum + (c.unreadCount ?? 0), 0);
+    const n = totalUnread > 0 ? totalUnread : convs.length;
     badge.textContent = String(n);
     badge.hidden = n === 0;
+    // Use different style for unread vs total count
+    badge.classList.toggle('mc-badge-unread', totalUnread > 0);
   }
 
   async function refresh() {
@@ -140,7 +185,7 @@ export function createMessageCenter({ getConversations }) {
 
   button.addEventListener('click', toggle);
   closeBtn.addEventListener('click', close);
-  backBtn.addEventListener('click', () => { activePhone = null; renderList(); });
+  backBtn.addEventListener('click', () => { activeConvId = null; activePhone = null; renderList(); });
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
   // Background polling for the badge from the start.

@@ -162,6 +162,65 @@ export default async function notifyContractors(req: Request): Promise<Response>
       await client.database.from('contractor_notifications').insert(notifications);
     }
 
+    // --- Upsert conversations and insert conversation messages ---
+    for (const contractor of contractors) {
+      const matchingNotification = notifications.find(n => n.contractor_id === contractor.id);
+      if (!matchingNotification) continue;
+
+      // Check if conversation already exists for this user + contractor
+      const { data: existingConvs } = await client.database
+        .from('conversations')
+        .select('id')
+        .eq('user_id', repairRequest.user_id)
+        .eq('contractor_id', contractor.id)
+        .limit(1);
+
+      let conversationId: string;
+      const messagePreview = (matchingNotification.message ?? '').slice(0, 120);
+      const now = new Date().toISOString();
+
+      if (existingConvs && existingConvs.length > 0) {
+        conversationId = existingConvs[0].id;
+        await client.database
+          .from('conversations')
+          .update({
+            latest_request_id: repairRequest.id,
+            last_message_at: now,
+            last_message_preview: messagePreview,
+            status: 'active',
+          })
+          .eq('id', conversationId);
+      } else {
+        const { data: newConvs } = await client.database
+          .from('conversations')
+          .insert([{
+            user_id: repairRequest.user_id,
+            contractor_id: contractor.id,
+            contractor_name: contractor.name,
+            contractor_phone: contractor.phone ?? null,
+            latest_request_id: repairRequest.id,
+            status: 'active',
+            last_message_at: now,
+            last_message_preview: messagePreview,
+            unread_count: 0,
+          }])
+          .select();
+        conversationId = newConvs?.[0]?.id;
+      }
+
+      if (conversationId) {
+        await client.database.from('conversation_messages').insert([{
+          conversation_id: conversationId,
+          request_id: repairRequest.id,
+          direction: 'outbound',
+          channel: matchingNotification.channel ?? 'insforge',
+          kind: 'outreach',
+          body: matchingNotification.message ?? '',
+          metadata: { contractorId: contractor.id, notificationId: matchingNotification.provider_message_id ?? null },
+        }]);
+      }
+    }
+
     await client.database
       .from('repair_requests')
       .update({ status: 'negotiating' })

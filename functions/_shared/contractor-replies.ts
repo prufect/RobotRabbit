@@ -200,6 +200,47 @@ export async function recordContractorReply(
     },
   }]);
 
+  // --- Update conversation with this reply ---
+  const contractorId = contractor?.id ?? input.contractorId ?? null;
+  if (contractorId) {
+    const { data: convRows } = await client.database
+      .from('conversations')
+      .select('id, unread_count')
+      .eq('user_id', repairRequest.user_id)
+      .eq('contractor_id', contractorId)
+      .limit(1);
+
+    if (convRows && convRows.length > 0) {
+      const conversationId = convRows[0].id;
+      const replyPreview = input.messageBody.slice(0, 120);
+
+      await client.database
+        .from('conversations')
+        .update({
+          latest_request_id: repairRequest.id,
+          last_message_at: receivedAt,
+          last_message_preview: replyPreview,
+          unread_count: (convRows[0] as any).unread_count ? (convRows[0] as any).unread_count + 1 : 1,
+        })
+        .eq('id', conversationId);
+
+      await client.database.from('conversation_messages').insert([{
+        conversation_id: conversationId,
+        request_id: repairRequest.id,
+        direction: 'inbound',
+        channel: input.source ?? 'direct',
+        kind: 'reply',
+        body: input.messageBody,
+        metadata: {
+          quoteId: quote.id,
+          price: parsed.price,
+          availability: parsed.availability,
+          approvalStatus,
+        },
+      }]);
+    }
+  }
+
   return {
     repairRequest,
     quote,

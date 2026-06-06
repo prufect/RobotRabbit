@@ -134,12 +134,15 @@ export async function* negotiateAndBook(contractors, userPreferences) {
   const t = (offsetMs) => new Date(now + offsetMs).toISOString();
 
   liveConversations = topContractors.map((c, i) => ({
+    conversationId: `live-conv-${i}`,
     phone: c.phone || `+1555000000${i}`,
     name: c.name,
+    contractorId: c.id ?? null,
     requestId: 'live-session',
     messageCount: 1,
     lastMessageAt: t(0),
     lastMessage: '🛠️ *New Job Request*...',
+    unreadCount: 0,
     messages: [
       { id: `m_out_${i}_1`, direction: 'outbound', channel: 'sms', kind: 'outreach', body: `🛠️ *New Job Request* — Please provide a quote for the requested repair.`, at: t(0) }
     ]

@@ -1502,6 +1502,56 @@ body {
 .mc-text b { font-weight: 700; }
 .mc-ts { display: block; font-size: 0.62rem; opacity: 0.65; text-align: right; margin-top: 3px; }
 
+/* Unread conversation highlight */
+.mc-conv-unread {
+  background: rgba(124, 58, 237, 0.04);
+  border-left: 3px solid var(--accent-primary);
+}
+.mc-conv-unread .mc-name { color: var(--accent-primary); }
+
+/* Meta row with unread dot */
+.mc-meta-row {
+  display: flex; align-items: center; justify-content: space-between;
+}
+.mc-unread-dot {
+  min-width: 18px; height: 18px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.62rem; font-weight: 700; color: #fff;
+  background: var(--accent-primary); border-radius: 9px;
+}
+
+/* Badge style for unread vs total */
+.mc-badge-unread {
+  background: var(--accent-primary) !important;
+  animation: pulse 1.5s ease-in-out 2;
+}
+
+/* Request context divider in thread view */
+.mc-request-divider {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 0; margin: 6px 0;
+}
+.mc-request-divider span {
+  font-size: 0.65rem; font-weight: 600;
+  color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: 0.5px; white-space: nowrap;
+}
+.mc-request-divider::before,
+.mc-request-divider::after {
+  content: ""; height: 1px; flex: 1;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* New conversation animation */
+@keyframes mc-new-conv {
+  0% { opacity: 0; transform: translateY(-8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.mc-conv:first-child {
+  animation: mc-new-conv 0.3s ease-out;
+}
+
+
 /* ==========================================================================
    19. Home Dashboard UI
    ========================================================================== */
