@@ -180,51 +180,29 @@ export async function* negotiateAndBook(contractors, userPreferences) {
  * Handle voice / text queries
  */
 export async function analyzeVoice(transcript) {
-  const text = transcript.toLowerCase();
-  
-  let category = 'unknown';
-  let urgency = 'medium';
-  let messageToUser = "I'm looking into that for you.";
-  let query = 'home repair services';
-  
-  if (text.includes('leak') || text.includes('water') || text.includes('sink') || text.includes('faucet') || text.includes('pipe') || text.includes('plumb')) {
-    category = 'plumbing';
-    messageToUser = "I understand you have a plumbing issue. Searching for top-rated plumbers who can fix this quickly...";
-    query = 'plumber repair leak';
-    if (text.includes('everywhere') || text.includes('flooding') || text.includes('burst')) urgency = 'high';
-  } else if (text.includes('ac') || text.includes('air condition') || text.includes('heat') || text.includes('hvac')) {
-    category = 'hvac';
-    messageToUser = "Got it, an HVAC issue. Looking up certified climate control experts nearby...";
-    query = 'HVAC AC repair technician';
-  } else if (text.includes('power') || text.includes('electric') || text.includes('outlet') || text.includes('switch') || text.includes('spark')) {
-    category = 'electrical';
-    messageToUser = "Electrical issues can be tricky. Finding licensed electricians in your area now...";
-    query = 'licensed electrician repair';
-    if (text.includes('spark') || text.includes('smoke') || text.includes('fire')) urgency = 'high';
-  }
-
-  // Initialize the session in the Track 2 backend so that status polling succeeds
   try {
-    await fetch(`${BACKEND_URL}/api/analyze`, {
+    const response = await fetch(`${BACKEND_URL}/api/analyze-text`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        conversationId,
-        userId: 'demo-user',
-        imageUrl: 'https://images.unsplash.com/photo-1585338107529-13afc5f02586?w=800',
-        urgency
-      })
+      body: JSON.stringify({ transcript }),
     });
+
+    if (!response.ok) {
+      throw new Error(`Backend returned HTTP ${response.status}`);
+    }
+
+    return await response.json();
   } catch (err) {
-    console.warn('Backend session initialization failed:', err.message);
+    console.warn('Gemini text analysis failed, using transcript as search query:', err.message);
+    // Graceful fallback: just use the user's own words as the search query
+    return {
+      status: 'success',
+      isIdentified: true,
+      category: 'general',
+      urgency: 'medium',
+      messageToUser: "I'm looking into that for you. Searching for professionals nearby...",
+      contractorSearchQuery: transcript.trim(),
+    };
   }
-  
-  return {
-    status: 'success',
-    isIdentified: true,
-    category,
-    urgency,
-    messageToUser,
-    contractorSearchQuery: query
-  };
 }
+

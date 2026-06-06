@@ -143,21 +143,21 @@ export async function analyzeVoice(transcript) {
   await delay(1500);
   const text = transcript.toLowerCase();
   
-  let category = 'unknown';
+  let category = 'general';
   let urgency = 'medium';
-  let messageToUser = "I'm looking into that for you.";
-  let query = 'home repair services';
+  let messageToUser = "I'm looking into that for you. Searching for the right professionals nearby...";
+  let query = transcript.trim(); // Default: use the user's own words
   
-  if (/\b(leak|water|sink|faucet|pipe|plumb|plumber)\b/i.test(text)) {
+  if (/\b(leak|water|sink|faucet|pipe|plumb|plumber|drain|toilet|sewer)\b/i.test(text)) {
     category = 'plumbing';
     messageToUser = "I understand you have a plumbing issue. Searching for top-rated plumbers who can fix this quickly...";
-    query = 'plumber repair leak';
-    if (/\b(everywhere|flooding|burst)\b/i.test(text)) urgency = 'high';
-  } else if (/\b(ac|air condition|air conditioning|heat|heater|hvac)\b/i.test(text)) {
+    query = 'plumber repair';
+    if (/\b(everywhere|flooding|burst|emergency)\b/i.test(text)) urgency = 'high';
+  } else if (/\b(ac|air condition|air conditioning|heater|heating|hvac|furnace|thermostat)\b/i.test(text)) {
     category = 'hvac';
     messageToUser = "Got it, an HVAC issue. Looking up certified climate control experts nearby...";
     query = 'HVAC AC repair technician';
-  } else if (/\b(power|electric|electrician|outlet|switch|spark|wire)\b/i.test(text)) {
+  } else if (/\b(power|electric|electrician|outlet|switch|spark|wire|wiring|breaker|circuit)\b/i.test(text)) {
     category = 'electrical';
     messageToUser = "Electrical issues can be tricky. Finding licensed electricians in your area now...";
     query = 'licensed electrician repair';
@@ -166,7 +166,36 @@ export async function analyzeVoice(transcript) {
     category = 'painting';
     messageToUser = "A fresh coat of paint sounds great. Looking for top-rated painters nearby...";
     query = 'house painter contractor';
+  } else if (/\b(roof|roofing|roofer|gutter|shingle)\b/i.test(text)) {
+    category = 'roofing';
+    messageToUser = "Roof issues need expert attention. Finding qualified roofers nearby...";
+    query = 'roof repair contractor';
+  } else if (/\b(architect|architecture|redesign|remodel|renovation)\b/i.test(text)) {
+    category = 'architecture';
+    messageToUser = "Great project! Searching for residential architects and designers nearby...";
+    query = 'residential architect home design';
+  } else if (/\b(landscape|landscaping|landscaper|garden|gardener|lawn|yard|tree)\b/i.test(text)) {
+    category = 'landscaping';
+    messageToUser = "Let's find the right landscaping professional for you...";
+    query = 'landscaping contractor';
+  } else if (/\b(carpenter|carpentry|cabinet|woodwork|deck|fence)\b/i.test(text)) {
+    category = 'carpentry';
+    messageToUser = "Searching for skilled carpenters and woodworkers nearby...";
+    query = 'carpenter contractor';
+  } else if (/\b(lock|locksmith|key|deadbolt|door lock)\b/i.test(text)) {
+    category = 'locksmith';
+    messageToUser = "Finding locksmiths who can help you right away...";
+    query = 'locksmith service';
+  } else if (/\b(clean|cleaning|cleaner|maid|housekeeping|janitor)\b/i.test(text)) {
+    category = 'cleaning';
+    messageToUser = "Looking for professional cleaning services nearby...";
+    query = 'house cleaning service';
+  } else if (/\b(handyman|general repair|fix|broken|maintenance)\b/i.test(text)) {
+    category = 'handyman';
+    messageToUser = "Searching for reliable handymen in your area...";
+    query = 'handyman home repair';
   }
+  // If none matched, category stays 'general' and query stays as the user's raw transcript
   
   return {
     status: 'success',
@@ -177,3 +206,4 @@ export async function analyzeVoice(transcript) {
     contractorSearchQuery: query
   };
 }
+
