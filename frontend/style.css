@@ -1382,6 +1382,7 @@ body {
   display: flex; flex-direction: column; gap: 8px;
   padding: 16px; overflow-y: auto;
 }
+<<<<<<< Updated upstream
 .mc-row { display: flex; }
 .mc-row.outbound { justify-content: flex-end; }
 .mc-bubble {
@@ -1402,3 +1403,108 @@ body {
 .mc-text { white-space: pre-wrap; word-wrap: break-word; }
 .mc-text b { font-weight: 700; }
 .mc-ts { display: block; font-size: 0.62rem; opacity: 0.65; text-align: right; margin-top: 3px; }
+=======
+
+/* ==========================================================================
+   Voice Modal Styles
+   ========================================================================== */
+.voice-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(30, 27, 46, 0.85); /* Darker backdrop */
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+.voice-modal-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.voice-modal-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
+  padding: 60px 24px;
+  position: relative;
+  color: white;
+}
+
+.voice-modal-close {
+  position: absolute;
+  top: 24px;
+  right: 24px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: white;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.voice-modal-close:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.voice-modal-header {
+  text-align: center;
+  margin-top: 40px;
+}
+
+.voice-modal-header h2 {
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  margin-bottom: 12px;
+}
+
+.voice-transcript-large {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: white;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.voice-modal-visualizer {
+  position: relative;
+  width: 200px;
+  height: 100px;
+  margin: 40px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.voice-modal-controls {
+  margin-bottom: 40px;
+}
+
+.voice-orb.large {
+  width: 120px;
+  height: 120px;
+}
+
+.voice-orb.large .voice-orb-icon {
+  width: 40px;
+  height: 40px;
+}
+
+>>>>>>> Stashed changes

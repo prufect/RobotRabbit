@@ -1,5 +1,4 @@
 import { createClient } from '@insforge/sdk';
-import * as mockApi from './mockApi.js';
 import * as realApi from './realApi.js';
 
 const DEFAULT_LOCATION = 'San Francisco, CA';
@@ -41,7 +40,7 @@ export function getRuntimeConfig() {
       ?? runtime.VITE_AGENTRABBIT_LOCATION
       ?? runtime.locationText
       ?? DEFAULT_LOCATION,
-    useMock: env.VITE_AGENTRABBIT_USE_MOCKS === 'true' || runtime.useMock === true,
+    useMock: false, // Force no mocks
   };
 }
 
@@ -425,18 +424,22 @@ export function createRepairApi(options = {}) {
     ...(options.config ?? {}),
   };
   const cryptoImpl = options.cryptoImpl ?? globalThis.crypto;
-  const fallbackApi = options.fallbackApi ?? (config.useMock ? mockApi : realApi);
+  const fallbackApi = options.fallbackApi ?? realApi; // Always realApi, no mock
   const preparePhotoForUpload = options.preparePhotoForUpload ?? prepareRepairPhotoForUpload;
   const injectedClient = Boolean(options.insforge);
   const insforge = options.insforge
-    ?? (config.anonKey && !config.useMock ? createClient({ baseUrl: config.baseUrl, anonKey: config.anonKey }) : null);
+    ?? (config.anonKey ? createClient({ baseUrl: config.baseUrl, anonKey: config.anonKey }) : null);
 
   let activeRequestId = null;
   let activeContractorIds = [];
   let activeContractors = [];
 
   function isBackendConfigured() {
-    return Boolean(insforge) && !config.useMock && (injectedClient || Boolean(config.baseUrl && config.anonKey));
+    if (!insforge) {
+      console.error('InsForge is not configured! Please provide VITE_INSFORGE_ANON_KEY.');
+      return false;
+    }
+    return true;
   }
 
   async function getCurrentUser() {
@@ -459,7 +462,7 @@ export function createRepairApi(options = {}) {
   }
 
   async function signIn({ email, password }) {
-    if (!isBackendConfigured()) throw new Error('InsForge is not configured for this frontend.');
+    if (!isBackendConfigured()) throw new Error('InsForge is not configured. Missing VITE_INSFORGE_ANON_KEY.');
     const { data, error } = await insforge.auth.signInWithPassword({ email, password });
     if (error) throw error;
     return data;
@@ -491,6 +494,30 @@ export function createRepairApi(options = {}) {
     return data;
   }
 
+<<<<<<< Updated upstream
+=======
+  async function sendResetPasswordEmail({ email, redirectTo }) {
+    if (!isBackendConfigured()) throw new Error('InsForge is not configured for this frontend.');
+    const { data, error } = await insforge.auth.sendResetPasswordEmail({ email, redirectTo });
+    if (error) throw error;
+    return data;
+  }
+
+  async function exchangeResetPasswordToken({ email, code }) {
+    if (!isBackendConfigured()) throw new Error('InsForge is not configured for this frontend.');
+    const { data, error } = await insforge.auth.exchangeResetPasswordToken({ email, code });
+    if (error) throw error;
+    return data;
+  }
+
+  async function resetPassword({ newPassword, otp }) {
+    if (!isBackendConfigured()) throw new Error('InsForge is not configured for this frontend.');
+    const { data, error } = await insforge.auth.resetPassword({ newPassword, otp });
+    if (error) throw error;
+    return data;
+  }
+
+>>>>>>> Stashed changes
   async function signInWithGoogle({ redirectTo = globalThis.location?.origin ?? config.baseUrl } = {}) {
     if (!isBackendConfigured()) throw new Error('InsForge is not configured for this frontend.');
     const { data, error } = await insforge.auth.signInWithOAuth('google', {
@@ -680,6 +707,11 @@ export function createRepairApi(options = {}) {
     resendVerificationEmail,
     signInWithGoogle,
     signOut,
+    verifyEmail,
+    resendVerificationEmail,
+    sendResetPasswordEmail,
+    exchangeResetPasswordToken,
+    resetPassword,
     analyzeImage,
     analyzeVoice,
     searchContractors,
@@ -699,6 +731,11 @@ export const verifyEmail = defaultApi.verifyEmail;
 export const resendVerificationEmail = defaultApi.resendVerificationEmail;
 export const signInWithGoogle = defaultApi.signInWithGoogle;
 export const signOut = defaultApi.signOut;
+export const verifyEmail = defaultApi.verifyEmail;
+export const resendVerificationEmail = defaultApi.resendVerificationEmail;
+export const sendResetPasswordEmail = defaultApi.sendResetPasswordEmail;
+export const exchangeResetPasswordToken = defaultApi.exchangeResetPasswordToken;
+export const resetPassword = defaultApi.resetPassword;
 export const analyzeImage = defaultApi.analyzeImage;
 export const analyzeVoice = defaultApi.analyzeVoice;
 export const searchContractors = defaultApi.searchContractors;
