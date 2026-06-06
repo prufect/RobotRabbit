@@ -20,11 +20,11 @@ export async function analyzeImage(imageUrl, urgency) {
   return { 
     status: 'success', 
     isIdentified: true, 
-    category: 'hvac', 
-    brand: 'Carrier', 
-    modelNumber: 'Infinity 26', 
-    messageToUser: 'I\'ve identified a Carrier Infinity 26 Air Conditioner. Searching for certified HVAC technicians nearby...', 
-    contractorSearchQuery: 'Carrier HVAC repair San Francisco' 
+    category: 'general', 
+    brand: null, 
+    modelNumber: null, 
+    messageToUser: 'I can see a home maintenance issue. Let me find qualified professionals nearby...', 
+    contractorSearchQuery: 'home repair maintenance contractor San Francisco' 
   };
 }
 
