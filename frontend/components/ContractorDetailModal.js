@@ -1,4 +1,4 @@
-export function showContractorDetailModal(contractor, onNegotiate) {
+export function showContractorDetailModal(contractor, onNegotiate, alreadyNegotiating = false) {
   const overlay = document.createElement('div');
   overlay.className = 'auth-overlay';
   overlay.style.zIndex = '9999';
@@ -16,6 +16,15 @@ export function showContractorDetailModal(contractor, onNegotiate) {
     contractor.verified?.insured ? '<span class="verified-badge">✓ Insured</span>' : '',
     !contractor.verified?.bbComplaint ? '<span class="verified-badge">✓ No Complaints</span>' : '',
   ].filter(Boolean).join('');
+
+  const negotiateButtonHtml = alreadyNegotiating
+    ? `<button class="btn-primary" id="btn-start-negotiating" disabled style="width: 100%; padding: 12px; font-size: 1rem; border-radius: 12px; border: none; background: #94a3b8; color: white; font-weight: 600; cursor: not-allowed; opacity: 0.7;">
+        🤝 Already Negotiating
+      </button>
+      <p style="text-align: center; font-size: 0.78rem; color: var(--text-muted); margin-top: 8px;">Check Messages for live updates</p>`
+    : `<button class="btn-primary" id="btn-start-negotiating" style="width: 100%; padding: 12px; font-size: 1rem; border-radius: 12px; border: none; background: var(--accent-primary); color: white; font-weight: 600; cursor: pointer;">
+        🤖 Start Negotiating
+      </button>`;
 
   overlay.innerHTML = `
     <div class="auth-card glass-solid" style="max-width: 400px; padding: 24px; position: relative;">
@@ -60,9 +69,7 @@ export function showContractorDetailModal(contractor, onNegotiate) {
         ` : ''}
       </div>
       
-      <button class="btn-primary" id="btn-start-negotiating" style="width: 100%; padding: 12px; font-size: 1rem; border-radius: 12px; border: none; background: var(--accent-primary); color: white; font-weight: 600; cursor: pointer;">
-        🤖 Start Negotiating
-      </button>
+      ${negotiateButtonHtml}
     </div>
   `;
 
@@ -81,8 +88,10 @@ export function showContractorDetailModal(contractor, onNegotiate) {
   });
 
   const negotiateBtn = overlay.querySelector('#btn-start-negotiating');
-  negotiateBtn.addEventListener('click', () => {
-    overlay.remove();
-    if (onNegotiate) onNegotiate(contractor);
-  });
+  if (!alreadyNegotiating) {
+    negotiateBtn.addEventListener('click', () => {
+      overlay.remove();
+      if (onNegotiate) onNegotiate(contractor);
+    });
+  }
 }

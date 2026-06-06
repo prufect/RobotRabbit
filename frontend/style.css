@@ -789,6 +789,33 @@ body {
   box-shadow: 0 4px 10px rgba(124, 58, 237, 0.3);
 }
 
+/* Negotiating state — card changes color + badge */
+.contractor-card.negotiating {
+  background: rgba(16, 185, 129, 0.06);
+  border: 2px solid rgba(16, 185, 129, 0.35);
+  cursor: default;
+}
+.contractor-card.negotiating:hover {
+  transform: none;
+}
+.negotiating-badge {
+  position: absolute;
+  bottom: -10px;
+  left: 16px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 12px;
+  border-radius: 8px;
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.3);
+  animation: badge-slide-in 0.35s ease-out;
+}
+@keyframes badge-slide-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.9); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 .contractor-header {
   display: flex;
   justify-content: space-between;
