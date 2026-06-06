@@ -1358,7 +1358,7 @@ body {
    17. Confetti/Particles
    ========================================================================== */
 .confetti-container {
-  position: fixed;
+  position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 2001;
@@ -1418,12 +1418,12 @@ body {
 }
 
 .mc-overlay {
-  position: fixed; inset: 0; z-index: 10000;
+  position: absolute; inset: 0; z-index: 10000;
   background: rgba(30, 27, 46, 0.35);
   display: flex; justify-content: flex-end;
 }
 .mc-panel {
-  width: min(420px, 100vw); height: 100%;
+  width: 100%; height: 100%;
   display: flex; flex-direction: column;
   background: var(--bg-surface);
   box-shadow: -8px 0 40px rgba(0, 0, 0, 0.18);
@@ -1726,7 +1726,7 @@ body {
    20. Voice Chat Full Screen Mode
    ========================================================================== */
 .voice-fullscreen-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
   background: linear-gradient(135deg, #e5e5f5, #f6e5e8);
   z-index: 3000;

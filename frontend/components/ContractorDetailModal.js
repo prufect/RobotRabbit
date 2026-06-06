@@ -66,7 +66,7 @@ export function showContractorDetailModal(contractor, onNegotiate) {
     </div>
   `;
 
-  document.body.appendChild(overlay);
+  (document.getElementById('app') || document.body).appendChild(overlay);
 
   const closeBtn = overlay.querySelector('.auth-close');
   closeBtn.addEventListener('click', () => {

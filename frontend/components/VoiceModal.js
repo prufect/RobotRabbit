@@ -128,7 +128,7 @@ export function createVoiceModal() {
   return {
     el: overlay,
     open() {
-      document.body.appendChild(overlay);
+      (document.getElementById('app') || document.body).appendChild(overlay);
       // trigger reflow for animation
       overlay.offsetHeight; 
       overlay.classList.add('visible');

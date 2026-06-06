@@ -189,7 +189,7 @@ export function createBookingConfirm(container) {
     // Fire confetti
     const confettiContainer = document.createElement('div');
     confettiContainer.className = 'confetti-container';
-    document.body.appendChild(confettiContainer);
+    (document.getElementById('app') || document.body).appendChild(confettiContainer);
     setTimeout(() => createConfetti(confettiContainer, 60), 300);
     
     // Done button

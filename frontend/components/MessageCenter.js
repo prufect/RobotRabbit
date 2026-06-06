@@ -39,7 +39,7 @@ export function createMessageCenter({ getConversations }) {
       <div class="mc-body"></div>
     </div>
   `;
-  document.body.appendChild(overlay);
+  (document.getElementById('app') || document.body).appendChild(overlay);
 
   const panel = overlay.querySelector('.mc-panel');
   const backBtn = overlay.querySelector('.mc-back');

@@ -56,7 +56,7 @@ export function createVoiceOrb(container) {
       </button>
     </div>
   `;
-  document.body.appendChild(fullscreenOverlay);
+  (document.getElementById('app') || document.body).appendChild(fullscreenOverlay);
   
   const bigOrb = fullscreenOverlay.querySelector('#big-voice-orb');
   const wavesEl = fullscreenOverlay.querySelector('#big-voice-waves');
