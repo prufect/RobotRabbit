@@ -54,10 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
     <img src="${logoUrl}" alt="RobotRabbit" class="header-logo">
     <div class="header-copy">
       <h1 class="header-title">RobotRabbit</h1>
-      <span class="header-status">
-        <span class="status-dot"></span>
-        AI Agent Online
-      </span>
     </div>
     <div class="auth-status" id="auth-status"></div>
   `;
