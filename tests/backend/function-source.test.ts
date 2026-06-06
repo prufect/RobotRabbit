@@ -60,6 +60,14 @@ describe('InsForge edge function sources', () => {
     expect(source).toContain('selectedContractorId');
   });
 
+  it('does not query the UUID contractors table for the local test contractor id', () => {
+    const source = readFileSync('functions/notify-contractors.ts', 'utf8');
+
+    expect(source).toContain('function isUuid');
+    expect(source).toContain('if (isUuid(selectedContractorId))');
+    expect(source).toContain('selectedContractorFromBody(body.selectedContractor, selectedContractorId)');
+  });
+
   it('marks selected contractor quotes as approved when booking is finalized', () => {
     const source = readFileSync('functions/finalize-booking.ts', 'utf8');
 

@@ -40,6 +40,10 @@ function selectedContractorIds(body: NotifyBody): string[] {
   return [...new Set(rawIds.filter((id): id is string => typeof id === 'string' && id.length > 0))];
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
 function selectedContractorFromBody(value: unknown, selectedContractorId: string): NotifiableContractor | null {
   if (!value || typeof value !== 'object') return null;
 
@@ -101,18 +105,22 @@ export default async function notifyContractors(req: Request): Promise<Response>
       return jsonResponse({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const { data: contractorData } = await client.database
-      .from('contractors')
-      .select('*')
-      .in('id', contractorIds);
-    const databaseContractors = Array.isArray(contractorData) ? contractorData as Contractor[] : [];
-    const contractorFromDatabase = databaseContractors[0]
-      ? {
-        id: databaseContractors[0].id,
-        name: databaseContractors[0].name,
-        phone: databaseContractors[0].phone,
-      }
-      : null;
+    let contractorFromDatabase: NotifiableContractor | null = null;
+    if (isUuid(selectedContractorId)) {
+      const { data: contractorData } = await client.database
+        .from('contractors')
+        .select('*')
+        .in('id', contractorIds);
+      const databaseContractors = Array.isArray(contractorData) ? contractorData as Contractor[] : [];
+      contractorFromDatabase = databaseContractors[0]
+        ? {
+          id: databaseContractors[0].id,
+          name: databaseContractors[0].name,
+          phone: databaseContractors[0].phone,
+        }
+        : null;
+    }
+
     const selectedContractor = contractorFromDatabase
       ?? selectedContractorFromBody(body.selectedContractor, selectedContractorId);
     if (!selectedContractor) {
