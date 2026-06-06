@@ -83,7 +83,7 @@ export async function analyzeHandler(req, res, next) {
       throw new ValidationError('Invalid request body.', { errors });
     }
 
-    const { conversationId, userId, imageUrl, urgency } = req.body;
+    const { conversationId, userId, imageUrl, urgency, userContext } = req.body;
 
     console.info(JSON.stringify({
       level: 'info',
@@ -98,9 +98,9 @@ export async function analyzeHandler(req, res, next) {
     state.createSession(conversationId, { userId, urgency, imageUrl });
 
     // ── Call Gemini Vision ───────────────────────────────────────────────────
-    const analysis = await analyzeImage(imageUrl);
+    const analysis = await analyzeImage(imageUrl, userContext);
 
-    if (analysis.isIdentified) {
+    if (analysis.isIdentified && analysis.confidenceScore === 100) {
       // Update session with identified details
       state.updateSession(conversationId, {
         status: 'SEARCHING_CONTRACTORS',
@@ -161,11 +161,13 @@ export async function analyzeHandler(req, res, next) {
     return res.status(200).json({
       status: 'success',
       isIdentified: analysis.isIdentified,
+      confidenceScore: analysis.confidenceScore ?? null,
       category: analysis.category ?? 'unknown',
       brand: analysis.brand ?? null,
       modelNumber: analysis.modelNumber ?? null,
       messageToUser: analysis.messageToUser,
       contractorSearchQuery: analysis.contractorSearchQuery ?? null,
+      clarifyingQuestion: analysis.clarifyingQuestion ?? null,
     });
   } catch (err) {
     next(err);

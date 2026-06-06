@@ -59,8 +59,9 @@ function normalizeContractor(contractor, index = 0) {
 /**
  * Send the image to Track 2's /api/analyze endpoint.
  * imageUrl can be a data:image/... URL from the camera or an https:// URL.
+ * userContext is optional additional text from the user to improve analysis.
  */
-export async function analyzeImage(imageUrl, urgency) {
+export async function analyzeImage(imageUrl, urgency, userContext) {
   const response = await fetch(`${BACKEND_URL}/api/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -68,7 +69,8 @@ export async function analyzeImage(imageUrl, urgency) {
       conversationId,
       userId: 'demo-user',
       imageUrl,
-      urgency
+      urgency,
+      ...(userContext ? { userContext } : {}),
     })
   });
 

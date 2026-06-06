@@ -5,6 +5,7 @@ import type { RepairRequest } from './_shared/types.ts';
 
 type AnalyzeBody = {
   requestId?: unknown;
+  userContext?: unknown;
 };
 
 export default async function analyze(req: Request): Promise<Response> {
@@ -52,11 +53,14 @@ export default async function analyze(req: Request): Promise<Response> {
       metadata: {},
     }]);
 
+    const userContext = typeof body.userContext === 'string' ? body.userContext : undefined;
+
     const analysis = await analyzeRepairImage(repairRequest.image_url, {
       geminiApiKey: Deno.env.get('GEMINI_API_KEY'),
       geminiModel: Deno.env.get('GEMINI_MODEL'),
       apiKey: Deno.env.get('OPENROUTER_API_KEY'),
       model: Deno.env.get('OPENROUTER_MODEL'),
+      userContext,
     });
 
     await client.database
@@ -100,11 +104,13 @@ export default async function analyze(req: Request): Promise<Response> {
     return jsonResponse({
       status: 'success',
       isIdentified: analysis.isIdentified,
+      confidenceScore: analysis.confidenceScore,
       category: analysis.category,
       brand: analysis.brand,
       modelNumber: analysis.modelNumber,
       messageToUser: analysis.messageToUser,
       contractorSearchQuery: analysis.contractorSearchQuery,
+      clarifyingQuestion: analysis.clarifyingQuestion,
     });
   } catch (error) {
     return jsonResponse({
