@@ -1,7 +1,6 @@
 import { createOnboardingSplash } from './components/OnboardingSplash.js';
 import { createChatWindow } from './components/ChatWindow.js';
 import { createVoiceOrb } from './components/VoiceOrb.js';
-import { createVoiceModal } from './components/VoiceModal.js';
 import { createCameraCapture } from './components/CameraCapture.js';
 import { createUrgencyToggle } from './components/UrgencyToggle.js';
 import { createAgentActivity } from './components/AgentActivity.js';
@@ -16,7 +15,6 @@ import {
   analyzeVoice,
   searchContractors,
   negotiateAndBook,
-  finalizeBooking,
   getConversations,
   getCurrentUser,
   signIn,
@@ -25,9 +23,6 @@ import {
   resendVerificationEmail,
   signInWithGoogle,
   signOut,
-  sendResetPasswordEmail,
-  exchangeResetPasswordToken,
-  resetPassword,
   isAuthRequiredError,
   isBackendConfigured,
 } from './services/insforgeApi.js';
@@ -105,7 +100,78 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 2. Initialize Components
   
+  // Dashboard Section
+  const dashboard = document.createElement('div');
+  dashboard.className = 'home-dashboard fade-in';
+  
+  const greeting = document.createElement('div');
+  greeting.className = 'greeting-section';
+  greeting.innerHTML = `
+    <div class="greeting-top">
+      <img src="${logoUrl}" alt="User" class="greeting-avatar" style="background:#fff;">
+      <div class="greeting-text">
+        <span class="greeting-name">Hello Alex</span>
+        <span class="greeting-welcome">Welcome Back</span>
+      </div>
+      <button class="premium-btn">Try premium ✨</button>
+    </div>
+    <h2 class="greeting-hero">Good Morning<br>How May I Assist You Today?</h2>
+  `;
+  dashboard.appendChild(greeting);
+  
+  const quickActions = document.createElement('div');
+  quickActions.className = 'quick-actions-grid';
+  const actions = [
+    { title: 'Image<br>Generating', icon: '🖼️', query: 'Generate an image' },
+    { title: 'Creating<br>Image', icon: '📋', query: 'Create an image' },
+    { title: 'Set<br>Reminder', icon: '⏰', query: 'Set a reminder' },
+    { title: 'Translate', icon: '💬', query: 'Translate text' }
+  ];
+  actions.forEach(act => {
+    const card = document.createElement('div');
+    card.className = 'action-card';
+    card.innerHTML = `
+      <div class="action-icon-wrapper">${act.icon}</div>
+      <div class="action-card-title">${act.title}</div>
+      <div class="action-card-arrow">→</div>
+    `;
+    card.addEventListener('click', () => processUserInput(act.query));
+    quickActions.appendChild(card);
+  });
+  dashboard.appendChild(quickActions);
+  
+  const chatHistory = document.createElement('div');
+  chatHistory.className = 'chat-history-section';
+  chatHistory.innerHTML = `
+    <div class="chat-history-header">
+      <div class="chat-history-title">Chat History</div>
+      <div class="chat-history-see-all">See All</div>
+    </div>
+    <div class="chat-filters">
+      <div class="chat-filter-pill active">All</div>
+      <div class="chat-filter-pill">Reminders</div>
+      <div class="chat-filter-pill">Music</div>
+      <div class="chat-filter-pill">Searches</div>
+    </div>
+  `;
+  dashboard.appendChild(chatHistory);
+
+  mainContent.appendChild(dashboard);
+
   const chatWindow = createChatWindow(mainContent);
+  const originalAddMessage = chatWindow.addMessage;
+  chatWindow.addMessage = function(msg) {
+    const bubble = originalAddMessage(msg);
+    if (msg.sender === 'agent' && lastInputMode === 'voice' && msg.text && msg.type !== 'typing') {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(msg.text);
+        utterance.rate = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }
+    }
+    return bubble;
+  };
   const urgencyToggle = createUrgencyToggle(bottomBarContent);
   const bookingConfirm = createBookingConfirm(appContainer);
   
@@ -143,15 +209,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Create Onboarding Splash
   createOnboardingSplash(appContainer);
   
-  // Create Voice Modal
-  const voiceModal = createVoiceModal();
-  
   // 3. State & Message Handling
   
   let msgIdCounter = 0;
   let currentIssueContext = null;
   let currentUser = null;
   let authModalOverlay = null;
+  let lastInputMode = 'text';
   
   function generateId() {
     return `msg-${++msgIdCounter}`;
@@ -248,6 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!isBackendConfigured()) return;
 
     let mode = initialMode;
+    let verificationEmail = options.email ?? '';
     const required = Boolean(options.required);
     const overlay = document.createElement('div');
     closeAuthModal();
@@ -255,66 +320,47 @@ document.addEventListener('DOMContentLoaded', () => {
     authModalOverlay = overlay;
     appContainer.appendChild(overlay);
 
-    let savedEmail = options.email ?? '';
-
     function close() {
       if (required && !isSignedIn()) return;
       closeAuthModal();
     }
 
-    function render(message = '', isError = false) {
-      let title = 'Sign In';
-      if (mode === 'sign-up') title = 'Create Account';
-      if (mode === 'verify-email') title = 'Verify Email';
-      if (mode === 'forgot-password' || mode === 'reset-password') title = 'Reset Password';
-
-      let fieldsHtml = '';
-      if (mode === 'verify-email') {
-        fieldsHtml = `
-          <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px; text-align: center;">
-            Enter the 6-digit verification code sent to <strong>${escapeAttribute(savedEmail)}</strong>
-          </p>
-          <label class="auth-field">
-            <span>Verification Code</span>
-            <input name="otp" type="text" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required autocomplete="one-time-code" style="text-align: center; font-size: 1.25rem; letter-spacing: 4px; font-weight: 700;">
-          </label>
-        `;
-      } else if (mode === 'forgot-password') {
-        fieldsHtml = `
-          <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px; text-align: center;">
-            Enter your email address to receive a 6-digit password reset code.
-          </p>
+    function render(message = options.message ?? '', isError = false) {
+      const isVerificationMode = mode === 'verify-email';
+      const title = isVerificationMode ? 'Verify Email' : mode === 'sign-up' ? 'Create Account' : 'Sign In';
+      const subtitle = isVerificationMode
+        ? 'Enter the 6-digit code from your email.'
+        : required ? 'Required for RobotRabbit.' : 'Connect to RobotRabbit.';
+      const controls = isVerificationMode ? `
           <label class="auth-field">
             <span>Email</span>
-            <input name="email" type="email" autocomplete="email" value="${escapeAttribute(savedEmail)}" required>
-          </label>
-        `;
-      } else if (mode === 'reset-password') {
-        fieldsHtml = `
-          <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 12px; text-align: center;">
-            Enter the 6-digit code sent to <strong>${escapeAttribute(savedEmail)}</strong> and your new password.
-          </p>
-          <label class="auth-field">
-            <span>Reset Code</span>
-            <input name="code" type="text" pattern="[0-9]{6}" maxlength="6" placeholder="123456" required autocomplete="one-time-code" style="text-align: center; font-size: 1.25rem; letter-spacing: 4px; font-weight: 700;">
+            <input name="email" type="email" autocomplete="email" value="${escapeAttribute(verificationEmail)}" required>
           </label>
           <label class="auth-field">
-            <span>New Password</span>
-            <input name="newPassword" type="password" minlength="8" required>
+            <span>Verification code</span>
+            <input name="otp" type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" required>
           </label>
-        `;
-      } else {
-        fieldsHtml = `
+          <div class="auth-message ${isError ? 'error' : ''}"></div>
+          <button class="btn-primary" type="submit">Verify Email</button>
+          <button class="auth-link-button" type="button" data-action="resend-code">Resend code</button>
+          <button class="auth-link-button muted" type="button" data-mode="sign-in">Back to sign in</button>
+        ` : `
+          <button class="auth-google" type="button" data-provider="google">
+            <span class="auth-google-mark" aria-hidden="true">G</span>
+            Continue with Google
+          </button>
+          <div class="auth-divider"><span>or</span></div>
+          <div class="auth-tabs">
+            <button class="auth-tab ${mode === 'sign-in' ? 'active' : ''}" type="button" data-mode="sign-in">Sign In</button>
+            <button class="auth-tab ${mode === 'sign-up' ? 'active' : ''}" type="button" data-mode="sign-up">Sign Up</button>
+          </div>
           <label class="auth-field">
             <span>Email</span>
-            <input name="email" type="email" autocomplete="email" value="${escapeAttribute(savedEmail)}" required>
+            <input name="email" type="email" autocomplete="email" required>
           </label>
           <label class="auth-field">
-            <span style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-              <span>Password</span>
-              ${mode === 'sign-in' ? `<a href="#" id="forgot-password-link" style="font-size: 0.85rem; color: var(--accent-primary); text-decoration: underline; font-weight: 600;">Forgot Password?</a>` : ''}
-            </span>
-            <input name="password" type="password" autocomplete="${mode === 'sign-up' ? 'new-password' : 'current-password'}" minlength="8" required>
+            <span>Password</span>
+            <input name="password" type="password" autocomplete="${mode === 'sign-up' ? 'new-password' : 'current-password'}" ${mode === 'sign-up' ? 'minlength="6"' : ''} required>
           </label>
           ${mode === 'sign-up' ? `
             <label class="auth-field">
@@ -322,236 +368,91 @@ document.addEventListener('DOMContentLoaded', () => {
               <input name="name" type="text" autocomplete="name">
             </label>
           ` : ''}
+          <div class="auth-message ${isError ? 'error' : ''}"></div>
+          <button class="btn-primary" type="submit">${title}</button>
         `;
-      }
-
-      let tabsHtml = '';
-      if (mode === 'sign-in' || mode === 'sign-up') {
-        tabsHtml = `
-          <div class="auth-tabs">
-            <button class="auth-tab ${mode === 'sign-in' ? 'active' : ''}" type="button" data-mode="sign-in">Sign In</button>
-            <button class="auth-tab ${mode === 'sign-up' ? 'active' : ''}" type="button" data-mode="sign-up">Sign Up</button>
-          </div>
-        `;
-      } else {
-        const tabLabel = mode === 'verify-email' ? 'Verification' : 'Reset Password';
-        tabsHtml = `
-          <div class="auth-tabs" style="justify-content: center;">
-            <button class="auth-tab active" type="button" style="pointer-events: none;">${tabLabel}</button>
-          </div>
-        `;
-      }
-
-      let googleButtonHtml = '';
-      if (mode === 'sign-in' || mode === 'sign-up') {
-        googleButtonHtml = `
-          <button class="auth-google" type="button" data-provider="google">
-            <span class="auth-google-mark" aria-hidden="true">G</span>
-            Continue with Google
-          </button>
-          <div class="auth-divider"><span>or</span></div>
-        `;
-      }
-
-      let footerButtonsHtml = '';
-      if (mode === 'verify-email') {
-        footerButtonsHtml = `
-          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px; align-items: center; width: 100%;">
-            <button class="btn-primary" type="submit" style="width: 100%;">Verify Code</button>
-            <button id="resend-code-btn" type="button" style="font-size: 0.8rem; border: none; background: none; color: var(--accent-primary); cursor: pointer; text-decoration: underline;">Resend code</button>
-            <button id="back-to-signin-btn" type="button" style="font-size: 0.8rem; border: none; background: none; color: var(--text-secondary); cursor: pointer;">Back to Sign In</button>
-          </div>
-        `;
-      } else if (mode === 'forgot-password') {
-        footerButtonsHtml = `
-          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px; align-items: center; width: 100%;">
-            <button class="btn-primary" type="submit" style="width: 100%;">Send Reset Code</button>
-            <button id="back-to-signin-btn" type="button" style="font-size: 0.8rem; border: none; background: none; color: var(--text-secondary); cursor: pointer;">Back to Sign In</button>
-          </div>
-        `;
-      } else if (mode === 'reset-password') {
-        footerButtonsHtml = `
-          <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 12px; align-items: center; width: 100%;">
-            <button class="btn-primary" type="submit" style="width: 100%;">Reset Password</button>
-            <button id="resend-reset-btn" type="button" style="font-size: 0.8rem; border: none; background: none; color: var(--accent-primary); cursor: pointer; text-decoration: underline;">Resend code</button>
-            <button id="back-to-signin-btn" type="button" style="font-size: 0.8rem; border: none; background: none; color: var(--text-secondary); cursor: pointer;">Back to Sign In</button>
-          </div>
-        `;
-      } else {
-        footerButtonsHtml = `
-          <button class="btn-primary" type="submit" style="width: 100%; margin-top: 12px;">${title}</button>
-        `;
-      }
-
       overlay.innerHTML = `
         <form class="auth-card glass-solid">
           <div class="auth-card-header">
             <div>
               <h2>${title}</h2>
-              <p>${required ? 'Required for RobotRabbit.' : 'Connect to RobotRabbit.'}</p>
+              <p>${subtitle}</p>
             </div>
             ${required ? '' : '<button class="auth-close" type="button" aria-label="Close">&times;</button>'}
           </div>
-          ${googleButtonHtml}
-          ${tabsHtml}
-          ${fieldsHtml}
-          <div class="auth-message ${isError ? 'error' : ''}"></div>
-          ${footerButtonsHtml}
+          ${controls}
         </form>
       `;
 
       overlay.querySelector('.auth-message').textContent = message;
       overlay.querySelector('.auth-close')?.addEventListener('click', close);
+      overlay.querySelector('[data-provider="google"]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.innerHTML = '<span class="auth-google-mark" aria-hidden="true">G</span>Connecting...';
 
-      if (mode === 'sign-in' || mode === 'sign-up') {
-        overlay.querySelector('[data-provider="google"]').addEventListener('click', async (event) => {
-          const button = event.currentTarget;
-          button.disabled = true;
-          button.innerHTML = '<span class="auth-google-mark" aria-hidden="true">G</span>Connecting...';
-
-          try {
-            await signInWithGoogle({ redirectTo: `${window.location.origin}/` });
-          } catch (error) {
-            render(error.message || 'Google sign-in failed.', true);
-          }
+        try {
+          await signInWithGoogle({ redirectTo: `${window.location.origin}/` });
+        } catch (error) {
+          render(error.message || 'Google sign-in failed.', true);
+        }
+      });
+      overlay.querySelectorAll('[data-mode]').forEach(control => {
+        control.addEventListener('click', () => {
+          mode = control.dataset.mode;
+          render();
         });
+      });
+      overlay.querySelector('[data-action="resend-code"]')?.addEventListener('click', async (event) => {
+        const button = event.currentTarget;
+        const form = button.closest('form');
+        const email = String(new FormData(form).get('email') ?? '').trim();
 
-        overlay.querySelectorAll('.auth-tab').forEach(tab => {
-          tab.addEventListener('click', () => {
-            mode = tab.dataset.mode;
-            render();
+        if (!email) {
+          render('Enter your email so I know where to resend the code.', true);
+          return;
+        }
+
+        verificationEmail = email;
+        button.disabled = true;
+        button.textContent = 'Sending...';
+
+        try {
+          await resendVerificationEmail({
+            email,
+            redirectTo: `${window.location.origin}/`,
           });
-        });
-
-        overlay.querySelector('#forgot-password-link')?.addEventListener('click', (e) => {
-          e.preventDefault();
-          mode = 'forgot-password';
-          render();
-        });
-      } else if (mode === 'verify-email') {
-        overlay.querySelector('#resend-code-btn').addEventListener('click', async (event) => {
-          const button = event.currentTarget;
-          button.disabled = true;
-          button.textContent = 'Sending...';
-          try {
-            await resendVerificationEmail({
-              email: savedEmail,
-              redirectTo: `${window.location.origin}/`,
-            });
-            render('Verification code resent. Check your email.', false);
-          } catch (error) {
-            button.disabled = false;
-            button.textContent = 'Resend Code';
-            render(error.message || 'Failed to resend code.', true);
-          }
-        });
-
-        overlay.querySelector('#back-to-signin-btn').addEventListener('click', () => {
-          mode = 'sign-in';
-          render();
-        });
-      } else if (mode === 'forgot-password') {
-        overlay.querySelector('#back-to-signin-btn').addEventListener('click', () => {
-          mode = 'sign-in';
-          render();
-        });
-      } else if (mode === 'reset-password') {
-        overlay.querySelector('#resend-reset-btn').addEventListener('click', async (event) => {
-          const button = event.currentTarget;
-          button.disabled = true;
-          button.textContent = 'Sending...';
-          try {
-            await sendResetPasswordEmail({
-              email: savedEmail,
-              redirectTo: `${window.location.origin}/`,
-            });
-            render('Reset code resent. Check your email.', false);
-          } catch (error) {
-            button.disabled = false;
-            button.textContent = 'Resend Code';
-            render(error.message || 'Failed to resend reset code.', true);
-          }
-        });
-
-        overlay.querySelector('#back-to-signin-btn').addEventListener('click', () => {
-          mode = 'sign-in';
-          render();
-        });
-      }
-
+          render('A new code is on its way.', false);
+        } catch (error) {
+          render(error.message || 'Could not resend the verification code.', true);
+        }
+      });
       overlay.querySelector('form').addEventListener('submit', async (event) => {
         event.preventDefault();
         const form = event.currentTarget;
         const submit = form.querySelector('button[type="submit"]');
         const formData = new FormData(form);
         submit.disabled = true;
-
-        if (mode === 'verify-email') {
-          submit.textContent = 'Verifying...';
-          try {
-            const otp = String(formData.get('otp') ?? '').trim();
-            await verifyEmail({ email: savedEmail, otp });
-            await refreshAuthState();
-            close();
-            chatWindow.addMessage({ id: generateId(), sender: 'agent', text: 'Signed in. I can now save photos, requests, contractor searches, and notifications in InsForge.' });
-          } catch (error) {
-            submit.disabled = false;
-            submit.textContent = 'Verify Code';
-            render(error.message || 'Verification failed. Please check the code.', true);
-          }
-          return;
-        }
-
-        if (mode === 'forgot-password') {
-          submit.textContent = 'Sending...';
-          try {
-            const email = String(formData.get('email') ?? '').trim();
-            savedEmail = email;
-            await sendResetPasswordEmail({
-              email,
-              redirectTo: `${window.location.origin}/`,
-            });
-            mode = 'reset-password';
-            render('Reset code sent to your email. Please check and enter it below.', false);
-          } catch (error) {
-            submit.disabled = false;
-            submit.textContent = 'Send Reset Code';
-            render(error.message || 'Failed to send reset code.', true);
-          }
-          return;
-        }
-
-        if (mode === 'reset-password') {
-          submit.textContent = 'Resetting...';
-          try {
-            const code = String(formData.get('code') ?? '').trim();
-            const newPassword = String(formData.get('newPassword') ?? '');
-            
-            // Exchange the 6-digit code for reset token
-            const exchangeData = await exchangeResetPasswordToken({ email: savedEmail, code });
-            const token = exchangeData?.token;
-            if (!token) throw new Error('Could not retrieve reset token.');
-
-            // Use the token to reset password
-            await resetPassword({ newPassword, otp: token });
-            
-            mode = 'sign-in';
-            render('Password reset successfully! Please sign in with your new password.', false);
-          } catch (error) {
-            submit.disabled = false;
-            submit.textContent = 'Reset Password';
-            render(error.message || 'Password reset failed. Please check the code and try again.', true);
-          }
-          return;
-        }
-
-        submit.textContent = mode === 'sign-up' ? 'Creating...' : 'Signing in...';
+        submit.textContent = mode === 'sign-up' ? 'Creating...' : mode === 'verify-email' ? 'Verifying...' : 'Signing in...';
 
         try {
           const email = String(formData.get('email') ?? '').trim();
           const password = String(formData.get('password') ?? '');
           const name = String(formData.get('name') ?? '').trim();
-          savedEmail = email;
+
+          if (mode === 'verify-email') {
+            const otp = String(formData.get('otp') ?? '').trim();
+            const data = await verifyEmail({ email, otp });
+            currentUser = data?.user ?? currentUser;
+            await refreshAuthState();
+            if (!currentUser && data?.user) {
+              currentUser = data.user;
+              renderAuthState();
+            }
+            close();
+            chatWindow.addMessage({ id: generateId(), sender: 'agent', text: 'Email verified and signed in. I can now save your RobotRabbit requests in InsForge.' });
+            return;
+          }
 
           if (mode === 'sign-up') {
             const data = await signUp({
@@ -560,7 +461,8 @@ document.addEventListener('DOMContentLoaded', () => {
               name,
               redirectTo: `${window.location.origin}/`,
             });
-            if (data?.requireEmailVerification || !data?.accessToken) {
+            if (data?.requireEmailVerification) {
+              verificationEmail = email;
               mode = 'verify-email';
               render('Enter the 6-digit code we sent to your email.', false);
               return;
@@ -573,25 +475,18 @@ document.addEventListener('DOMContentLoaded', () => {
           close();
           chatWindow.addMessage({ id: generateId(), sender: 'agent', text: 'Signed in. I can now save photos, requests, contractor searches, and notifications in InsForge.' });
         } catch (error) {
-          submit.disabled = false;
-          submit.textContent = mode === 'sign-up' ? 'Create Account' : 'Sign In';
-          const errMsg = error.message || '';
-          if (mode === 'sign-in' && (errMsg.toLowerCase().includes('confirm') || errMsg.toLowerCase().includes('verify') || errMsg.toLowerCase().includes('verification') || errMsg.toLowerCase().includes('unconfirmed'))) {
-            mode = 'verify-email';
-            render('Account email is not verified yet. Please enter the verification code sent to your email.', false);
-          } else {
-            render(errMsg || 'Authentication failed.', true);
-          }
+          render(error.message || 'Authentication failed.', true);
         }
       });
     }
 
-    render(options.message ?? '');
+    render();
   }
   
-  async function processUserInput(text, imageUrl = null, imageFile = null) {
+  async function processUserInput(text, imageUrl = null, imageFile = null, isVoice = false) {
     if (!requireSignedIn()) return;
 
+    lastInputMode = isVoice ? 'voice' : 'text';
     const id = generateId();
     chatWindow.addMessage({ id, sender: 'user', text, imageUrl });
     textInput.value = '';
@@ -690,12 +585,11 @@ document.addEventListener('DOMContentLoaded', () => {
     btnContainer.innerHTML = `<button class="btn-primary fade-in" style="margin-top: 8px;">🤖 Negotiate with top 3</button>`;
     chatWindow.addCustomElement(btnContainer);
     
-    const startNegotiation = async (btn, specificContractor = null) => {
+    const startNegotiation = async (btn) => {
       btn.disabled = true;
       btn.innerHTML = 'Negotiating...';
       btn.style.opacity = '0.7';
-      const contractorsToNegotiate = specificContractor ? [specificContractor] : contractors;
-      await startNegotiationFlow(contractorsToNegotiate, urgency);
+      await startNegotiationFlow(contractors, urgency);
     };
 
     btnContainer.querySelector('button').addEventListener('click', (e) => startNegotiation(e.target));
@@ -703,36 +597,40 @@ document.addEventListener('DOMContentLoaded', () => {
     cardsContainer.addEventListener('contractor-selected', (e) => {
       showContractorDetailModal(e.detail.contractor, () => {
         const btn = btnContainer.querySelector('button');
-        startNegotiation(btn, e.detail.contractor);
+        startNegotiation(btn);
       });
     });
   }
   
   async function startNegotiationFlow(contractors, urgency) {
+    const activity = createAgentActivity(mainContent);
     chatWindow.scrollToBottom();
     
-    chatWindow.addMessage({ 
-      id: generateId(), 
-      sender: 'agent', 
-      text: `Negotiation has started with ${Math.min(3, contractors.length)} agents. If you want to see details, go to the Messages.` 
-    });
-    
-    const mcToggle = document.querySelector('.mc-toggle');
-    if (mcToggle) {
-      mcToggle.style.animation = 'none';
-      setTimeout(() => mcToggle.style.animation = 'pulse 1s 3', 50);
-    }
-    
     const gen = negotiateAndBook(contractors, { urgency });
+    let currentStepIdx = null;
     let finalBooking = null;
     
     try {
       for await (const state of gen) {
-        if (state.step === 'booked') {
+        if (currentStepIdx !== null) {
+          activity.updateStep(currentStepIdx, { icon: '✅', status: 'done' });
+        }
+
+        let icon = '💬';
+        if (state.step === 'contacting-individual') icon = '📞';
+        if (state.step === 'responses') icon = '📱';
+        if (state.step === 'negotiating') icon = '🤝';
+        if (state.step === 'comparing') icon = '📊';
+
+        if (state.step !== 'booked') {
+          currentStepIdx = activity.addStep({ icon, text: state.message, status: 'active' });
+        } else {
           finalBooking = state.booking;
         }
+        chatWindow.scrollToBottom();
       }
     } catch (error) {
+      if (currentStepIdx !== null) activity.updateStep(currentStepIdx, { icon: '!', status: 'pending' });
       chatWindow.addMessage({ id: generateId(), sender: 'agent', text: error.message || 'Negotiation failed.' });
       return;
     }
@@ -755,60 +653,11 @@ document.addEventListener('DOMContentLoaded', () => {
       chatWindow.addMessage({ 
         id: generateId(), 
         sender: 'agent', 
-        text: `The final price is negotiated in between these three contractors to $${finalBooking.negotiatedPrice} with ${finalBooking.contractor.name}. Do you want to accept the offer?` 
+        text: `Great news! I successfully negotiated with ${finalBooking.contractor.name} and secured a price of $${finalBooking.negotiatedPrice}. They can be there on ${finalBooking.date} at ${finalBooking.time}. I've already verified their license and insurance.` 
       });
       
       await wait(1000);
-
-      const calendarContainer = document.createElement('div');
-      calendarContainer.style.display = 'flex';
-      calendarContainer.style.flexWrap = 'wrap';
-      calendarContainer.style.gap = '8px';
-      calendarContainer.style.marginTop = '12px';
-
-      const slots = ['Today, 2:00 PM', 'Today, 4:00 PM', 'Tomorrow, 10:00 AM', 'Tomorrow, 1:00 PM'];
-      
-      slots.forEach(slot => {
-        const btn = document.createElement('button');
-        btn.className = 'btn-primary';
-        btn.style.flex = '1 1 calc(50% - 8px)';
-        btn.style.background = 'white';
-        btn.style.color = 'var(--accent-primary)';
-        btn.style.border = '1px solid var(--accent-primary)';
-        btn.innerHTML = `📅 ${slot}`;
-        
-        btn.addEventListener('click', async () => {
-          // Disable all buttons
-          Array.from(calendarContainer.querySelectorAll('button')).forEach(b => {
-            b.disabled = true;
-            b.style.opacity = '0.5';
-          });
-          btn.style.background = 'var(--accent-primary)';
-          btn.style.color = 'white';
-          btn.innerHTML = 'Booking...';
-
-          finalBooking.date = slot.split(',')[0];
-          finalBooking.time = slot.split(',')[1].trim();
-
-          try {
-            await finalizeBooking(finalBooking.contractor.id, finalBooking.date, finalBooking.time);
-          } catch (error) {
-            console.error("Booking finalization failed:", error);
-          }
-
-          chatWindow.addMessage({
-            id: generateId(),
-            sender: 'agent',
-            text: `Awesome! I've booked your appointment for ${slot}. A calendar invite has been sent to you and the contractor.`
-          });
-
-          bookingConfirm.show(finalBooking);
-        });
-
-        calendarContainer.appendChild(btn);
-      });
-
-      chatWindow.addCustomElement(calendarContainer);
+      bookingConfirm.show(finalBooking);
     }
   }
   
@@ -823,13 +672,6 @@ document.addEventListener('DOMContentLoaded', () => {
       sender: 'agent', 
       text: 'Hi! I\'m RobotRabbit 🐰. I can help fix anything in your home. Describe the issue, or snap a photo of what\'s broken.' 
     });
-  });
-
-  // Category Selection
-  appContainer.addEventListener('category-selected', async (e) => {
-    const query = e.detail.query;
-    await wait(500);
-    processUserInput(query);
   });
 
   refreshAuthState({ requireLogin: true });
@@ -868,14 +710,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   
   // Handle Voice Input
-  voiceContainer.addEventListener('voice-trigger', () => {
-    voiceModal.open();
-  });
-
-  voiceModal.on('voice-result', (e) => {
+  voiceContainer.addEventListener('voice-result', (e) => {
     const { transcript } = e.detail;
     if (transcript) {
-      processUserInput(transcript);
+      processUserInput(transcript, null, null, true);
     }
   });
 });
