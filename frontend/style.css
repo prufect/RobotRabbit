@@ -138,10 +138,36 @@ body {
    ========================================================================== */
 #app {
   min-height: 100vh;
+  min-height: 100dvh;
+  max-width: 430px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   position: relative;
   z-index: 1;
+}
+
+/* On larger screens, frame the app like a phone */
+@media (min-width: 480px) {
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  #app {
+    min-height: min(92vh, 900px);
+    max-height: 900px;
+    border-radius: 40px;
+    box-shadow:
+      0 0 0 8px rgba(30, 27, 46, 0.08),
+      0 20px 60px rgba(0, 0, 0, 0.15),
+      0 0 120px rgba(155, 89, 182, 0.08);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    background: linear-gradient(135deg, #f6e5e8, #e5e5f5);
+  }
 }
 
 .app-header {
@@ -1245,32 +1271,13 @@ body {
 }
 
 /* ==========================================================================
-   18. Responsive
+   18. Responsive — Mobile-first, everything fits within the 430px shell
    ========================================================================== */
-@media (min-width: 768px) {
-  .main-content {
-    max-width: 600px;
-    margin: 0 auto;
-    width: 100%;
-  }
-  
-  .bottom-bar {
-    max-width: 600px;
-    margin: 0 auto;
-    width: 100%;
-    border-radius: 24px;
-    bottom: 20px;
-    border-bottom: 1px solid var(--glass-border);
-  }
-  
-  .splash-card {
-    padding: 56px 40px;
-  }
-}
 
-@media (min-width: 1024px) {
-  .main-content, .bottom-bar {
-    max-width: 680px;
+/* Safe area insets for notched phones */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .bottom-bar {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
   }
 }
 
