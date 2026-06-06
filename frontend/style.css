@@ -187,6 +187,34 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.header-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.header-status {
+  font-size: 0.72rem;
+  color: var(--accent-tertiary);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  background: var(--accent-tertiary);
+  border-radius: 50%;
+  box-shadow: 0 0 6px var(--accent-tertiary);
 }
 
 .header-logo {
@@ -197,10 +225,8 @@ body {
 }
 
 .auth-status {
-  margin-left: auto;
   display: flex;
   align-items: center;
-  min-width: 84px;
   justify-content: flex-end;
 }
 
