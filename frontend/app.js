@@ -5,6 +5,7 @@ import { createCameraCapture } from './components/CameraCapture.js';
 import { createUrgencyToggle } from './components/UrgencyToggle.js';
 import { createAgentActivity } from './components/AgentActivity.js';
 import { createContractorCards } from './components/ContractorCard.js';
+import { showContractorDetailModal } from './components/ContractorDetailModal.js';
 import { createBookingConfirm } from './components/BookingConfirm.js';
 import { createPriceIntel } from './components/PriceIntel.js';
 
@@ -417,14 +418,23 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Add Negotiation Button
     const btnContainer = document.createElement('div');
-    btnContainer.innerHTML = `<button class="btn-primary fade-in" style="margin-top: 8px;">🤖 Yes, negotiate for me</button>`;
+    btnContainer.innerHTML = `<button class="btn-primary fade-in" style="margin-top: 8px;">🤖 Negotiate with top 3</button>`;
     chatWindow.addCustomElement(btnContainer);
     
-    btnContainer.querySelector('button').addEventListener('click', async (e) => {
-      e.target.disabled = true;
-      e.target.innerHTML = 'Negotiating...';
-      e.target.style.opacity = '0.7';
+    const startNegotiation = async (btn) => {
+      btn.disabled = true;
+      btn.innerHTML = 'Negotiating...';
+      btn.style.opacity = '0.7';
       await startNegotiationFlow(contractors, urgency);
+    };
+
+    btnContainer.querySelector('button').addEventListener('click', (e) => startNegotiation(e.target));
+
+    cardsContainer.addEventListener('contractor-selected', (e) => {
+      showContractorDetailModal(e.detail.contractor, () => {
+        const btn = btnContainer.querySelector('button');
+        startNegotiation(btn);
+      });
     });
   }
   
