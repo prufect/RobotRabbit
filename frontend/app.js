@@ -37,12 +37,16 @@ document.addEventListener('DOMContentLoaded', () => {
   header.className = 'app-header glass';
   header.innerHTML = `
     <img src="${logoUrl}" alt="RobotRabbit" class="header-logo">
-    <div class="header-copy">
+    <div class="header-copy" style="flex: 1;">
       <h1 style="font-size:1.1rem; font-weight:700; color:var(--text-primary); margin:0; line-height:1.2;">RobotRabbit</h1>
       <span style="font-size:0.75rem; color:var(--accent-tertiary); font-weight:600; display:flex; align-items:center; gap:4px;">
         <span style="display:inline-block; width:6px; height:6px; background:var(--accent-tertiary); border-radius:50%; box-shadow:0 0 6px var(--accent-tertiary);"></span>
         AI Agent Online
       </span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 8px; margin-right: 16px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--text-secondary);"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+      <input type="text" id="location-input" value="San Francisco, CA" title="Enter City or Zip Code" style="font-size: 0.85rem; padding: 6px 12px; border-radius: 16px; border: 1px solid rgba(0,0,0,0.1); background: rgba(255,255,255,0.6); width: 140px; color: var(--text-primary); outline: none;">
     </div>
     <div class="auth-status" id="auth-status"></div>
   `;
@@ -387,7 +391,9 @@ document.addEventListener('DOMContentLoaded', () => {
   async function findAndPresentContractors(query, urgency, activity, searchStep) {
     let contractors;
     try {
-      contractors = await searchContractors(query, 'San Francisco, CA');
+      const locationInput = document.getElementById('location-input');
+      const location = locationInput ? locationInput.value : 'San Francisco, CA';
+      contractors = await searchContractors(query, location);
     } catch (error) {
       activity.updateStep(searchStep, { icon: '!', status: 'pending' });
       chatWindow.addMessage({ id: generateId(), sender: 'agent', text: error.message || 'Contractor search failed.' });
