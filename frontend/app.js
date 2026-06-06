@@ -538,6 +538,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         let icon = '💬';
+        if (state.step === 'contacting-individual') icon = '📞';
         if (state.step === 'responses') icon = '📱';
         if (state.step === 'negotiating') icon = '🤝';
         if (state.step === 'comparing') icon = '📊';
