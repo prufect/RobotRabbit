@@ -401,6 +401,12 @@ export function createRepairApi(options = {}) {
     return fallbackApi.analyzeVoice(transcript);
   }
 
+  // Message Center conversations come straight from Track 3 (independent of the
+  // InsForge SDK), so we always defer to the chosen fallback client.
+  async function getConversations() {
+    return fallbackApi.getConversations();
+  }
+
   async function searchContractors(query, location = config.locationText) {
     if (!isBackendConfigured() || !activeRequestId) {
       return fallbackApi.searchContractors(query, location);
@@ -509,6 +515,7 @@ export function createRepairApi(options = {}) {
     searchContractors,
     negotiateAndBook,
     getRepairStatus,
+    getConversations,
   };
 }
 
@@ -525,3 +532,4 @@ export const analyzeVoice = defaultApi.analyzeVoice;
 export const searchContractors = defaultApi.searchContractors;
 export const negotiateAndBook = defaultApi.negotiateAndBook;
 export const getRepairStatus = defaultApi.getRepairStatus;
+export const getConversations = defaultApi.getConversations;

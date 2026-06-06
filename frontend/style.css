@@ -1257,3 +1257,110 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ============================================================
+   Message Center (Track 3 conversations)
+   ============================================================ */
+.mc-toggle {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; margin-right: 10px;
+  font-size: 0.82rem; font-weight: 600;
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 16px; cursor: pointer;
+  position: relative; transition: background 0.15s ease;
+}
+.mc-toggle:hover { background: rgba(255, 255, 255, 0.9); }
+.mc-toggle svg { color: var(--accent-primary); }
+.mc-badge {
+  min-width: 18px; height: 18px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.68rem; font-weight: 700; color: #fff;
+  background: var(--accent-secondary); border-radius: 9px;
+}
+
+.mc-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(30, 27, 46, 0.35);
+  display: flex; justify-content: flex-end;
+}
+.mc-panel {
+  width: min(420px, 100vw); height: 100%;
+  display: flex; flex-direction: column;
+  background: var(--bg-surface);
+  box-shadow: -8px 0 40px rgba(0, 0, 0, 0.18);
+  transform: translateX(100%); transition: transform 0.25s ease;
+}
+.mc-panel.mc-open { transform: translateX(0); }
+
+.mc-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 18px; border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+.mc-title { display: flex; flex-direction: column; flex: 1; }
+.mc-title strong { font-size: 1rem; color: var(--text-primary); }
+.mc-sub { font-size: 0.72rem; color: var(--text-secondary); }
+.mc-back, .mc-close {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-secondary); font-size: 1.4rem; line-height: 1;
+  padding: 2px 6px; border-radius: 8px;
+}
+.mc-back { font-size: 1.2rem; }
+.mc-back:hover, .mc-close:hover { background: rgba(0, 0, 0, 0.06); }
+
+.mc-body { flex: 1; overflow-y: auto; }
+.mc-empty {
+  padding: 48px 24px; text-align: center;
+  color: var(--text-secondary); font-size: 0.9rem;
+}
+.mc-empty span { font-size: 0.78rem; color: var(--text-muted); }
+
+.mc-list { display: flex; flex-direction: column; }
+.mc-conv {
+  text-align: left; background: none; border: none;
+  padding: 14px 18px; border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  cursor: pointer; display: flex; flex-direction: column; gap: 3px;
+  transition: background 0.12s ease;
+}
+.mc-conv:hover { background: rgba(255, 255, 255, 0.55); }
+.mc-conv-top { display: flex; justify-content: space-between; align-items: baseline; }
+.mc-name { font-weight: 600; font-size: 0.9rem; color: var(--text-primary); }
+.mc-time { font-size: 0.7rem; color: var(--text-muted); }
+.mc-preview {
+  font-size: 0.8rem; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 320px;
+}
+.mc-meta { font-size: 0.68rem; color: var(--text-muted); }
+
+.mc-thread-head {
+  padding: 12px 18px; border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex; flex-direction: column;
+}
+.mc-thread-head strong { color: var(--text-primary); font-size: 0.95rem; }
+.mc-thread-head span { font-size: 0.72rem; color: var(--text-secondary); }
+
+.mc-bubbles {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 16px; overflow-y: auto;
+}
+.mc-row { display: flex; }
+.mc-row.outbound { justify-content: flex-end; }
+.mc-bubble {
+  max-width: 78%; padding: 8px 11px; border-radius: 12px;
+  font-size: 0.85rem; line-height: 1.4;
+}
+.mc-row.inbound .mc-bubble {
+  background: #fff; color: var(--text-primary);
+  border: 1px solid rgba(0, 0, 0, 0.06); border-top-left-radius: 3px;
+}
+.mc-row.outbound .mc-bubble {
+  background: var(--accent-primary); color: #fff; border-top-right-radius: 3px;
+}
+.mc-kind {
+  display: block; font-size: 0.6rem; text-transform: uppercase;
+  letter-spacing: 0.5px; opacity: 0.7; margin-bottom: 3px;
+}
+.mc-text { white-space: pre-wrap; word-wrap: break-word; }
+.mc-text b { font-weight: 700; }
+.mc-ts { display: block; font-size: 0.62rem; opacity: 0.65; text-align: right; margin-top: 3px; }

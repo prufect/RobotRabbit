@@ -79,25 +79,25 @@ app.post('/api/notify-contractors', async (req, res) => {
     return res.status(400).json({ status: 'error', message: 'contractors[] is required' });
   }
 
-  // Store conversationId → phone mapping so we can route Twilio replies back
-  const conversationId = req.headers['x-conversation-id'] || '';
-  if (conversationId) {
-    for (const c of contractors) {
-      if (c.phone) {
-        phoneToConversation.set(c.phone, conversationId);
-        phoneToName.set(c.phone, c.name || 'Unknown Contractor');
-      }
-    }
-    console.log(`[notify] Mapped ${contractors.length} phones → conversationId: ${conversationId}`);
-  }
-
   try {
-    // requestId ties all messages of one job together (Track 4 maintenance_requests.id).
-    const requestId = req.body.requestId || req.body.conversationId || null;
-    // Remember who we contacted + the job, for later booking/decline messaging.
+    // The Track 2 conversationId (sent via header or body) doubles as the
+    // requestId that threads all messages of one job together. One registry
+    // keyed by phone now serves both Track 2 forwarding and the Message Center.
+    const conversationId = req.headers['x-conversation-id'] || req.body.conversationId || '';
+    const requestId = conversationId || req.body.requestId || null;
     lastIssue = issueDetails || {};
     for (const c of contractors) {
-      if (c.phone) contractorsByPhone.set(c.phone, { name: c.name, telegramChatId: c.telegramChatId, requestId });
+      if (c.phone) {
+        contractorsByPhone.set(c.phone, {
+          name: c.name || 'Unknown Contractor',
+          telegramChatId: c.telegramChatId,
+          requestId,
+          conversationId: conversationId || null,
+        });
+      }
+    }
+    if (conversationId) {
+      console.log(`[notify] Mapped ${contractors.length} phones → conversationId: ${conversationId}`);
     }
     const { notifiedCount, results, errors } = await notifyContractors(
       contractors,
@@ -146,8 +146,8 @@ app.post('/webhooks/twilio', async (req, res) => {
   console.log('[webhook] contractor reply:', reply);
 
   // ── Forward to Track 2's /api/contractor-reply ──────────────────────────
-  const conversationId = phoneToConversation.get(from);
-  const contractorName = phoneToName.get(from) || 'Unknown';
+  const conversationId = known.conversationId;
+  const contractorName = known.name || 'Unknown';
 
   if (conversationId && config.track2BaseUrl) {
     try {

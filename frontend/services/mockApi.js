@@ -173,3 +173,37 @@ export async function analyzeVoice(transcript) {
     contractorSearchQuery: query
   };
 }
+
+// Mock Message Center threads so the panel demos without a live backend.
+export async function getConversations() {
+  await delay(300);
+  const now = Date.now();
+  const t = (min) => new Date(now - min * 60000).toISOString();
+  return [
+    {
+      phone: '+14155550707',
+      name: 'Pacific Plumbing',
+      requestId: 'demo-session',
+      messageCount: 3,
+      lastMessageAt: t(1),
+      lastMessage: "Congrats! You've got the job.",
+      messages: [
+        { id: 'm1', direction: 'outbound', channel: 'whatsapp', kind: 'outreach', body: '🛠️ *New Job Request* from a homeowner about a plumbing issue.\n\n*Issue:* Kohler water heater\n*Urgency:* 🚨 URGENT', at: t(8) },
+        { id: 'm2', direction: 'inbound', channel: 'whatsapp', kind: 'reply', body: 'YES, $120, there in 30 mins', at: t(4) },
+        { id: 'm3', direction: 'outbound', channel: 'whatsapp', kind: 'booking', body: "Congrats! You've got the job. The homeowner is expecting you.", at: t(1) },
+      ],
+    },
+    {
+      phone: '+14155550808',
+      name: 'Mission Drain Masters',
+      requestId: 'demo-session',
+      messageCount: 2,
+      lastMessageAt: t(3),
+      lastMessage: 'Thanks for responding — homeowner went with another provider.',
+      messages: [
+        { id: 'm4', direction: 'outbound', channel: 'whatsapp', kind: 'outreach', body: '🛠️ *New Job Request* — Kohler water heater', at: t(8) },
+        { id: 'm5', direction: 'inbound', channel: 'whatsapp', kind: 'reply', body: 'Yes available, $180', at: t(5) },
+      ],
+    },
+  ];
+}
