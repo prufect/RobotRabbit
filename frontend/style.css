@@ -307,15 +307,13 @@ body {
    ========================================================================== */
 .voice-orb-container {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 20px;
 }
 
 .voice-orb {
-  width: 100px;
-  height: 100px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   background: var(--gradient-hero);
   border: none;
@@ -326,7 +324,8 @@ body {
   justify-content: center;
   transition: all 0.3s;
   padding: 0;
-  box-shadow: 0 10px 25px rgba(124, 58, 237, 0.3);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+  flex-shrink: 0;
 }
 
 .voice-orb::before {
@@ -355,8 +354,8 @@ body {
 }
 
 .voice-orb-icon {
-  width: 32px;
-  height: 32px;
+  width: 20px;
+  height: 20px;
   color: white;
   z-index: 2;
 }
