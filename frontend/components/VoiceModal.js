@@ -60,7 +60,7 @@ export function createVoiceModal() {
       // Map data to the 12 bars (visualizer usually gives 8, so we wrap/scale)
       const dataIndex = Math.floor((i / 12) * data.length);
       const height = 6 + (data[dataIndex] || 0) * 80; // 6px min, 86px max
-      bar.style.height = \`\${height}px\`;
+      bar.style.height = `${height}px`;
     });
   });
 

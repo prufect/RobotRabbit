@@ -1382,7 +1382,6 @@ body {
   display: flex; flex-direction: column; gap: 8px;
   padding: 16px; overflow-y: auto;
 }
-<<<<<<< Updated upstream
 .mc-row { display: flex; }
 .mc-row.outbound { justify-content: flex-end; }
 .mc-bubble {
@@ -1403,7 +1402,6 @@ body {
 .mc-text { white-space: pre-wrap; word-wrap: break-word; }
 .mc-text b { font-weight: 700; }
 .mc-ts { display: block; font-size: 0.62rem; opacity: 0.65; text-align: right; margin-top: 3px; }
-=======
 
 /* ==========================================================================
    Voice Modal Styles
@@ -1506,5 +1504,3 @@ body {
   width: 40px;
   height: 40px;
 }
-
->>>>>>> Stashed changes

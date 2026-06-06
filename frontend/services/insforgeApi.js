@@ -494,8 +494,6 @@ export function createRepairApi(options = {}) {
     return data;
   }
 
-<<<<<<< Updated upstream
-=======
   async function sendResetPasswordEmail({ email, redirectTo }) {
     if (!isBackendConfigured()) throw new Error('InsForge is not configured for this frontend.');
     const { data, error } = await insforge.auth.sendResetPasswordEmail({ email, redirectTo });
@@ -517,7 +515,6 @@ export function createRepairApi(options = {}) {
     return data;
   }
 
->>>>>>> Stashed changes
   async function signInWithGoogle({ redirectTo = globalThis.location?.origin ?? config.baseUrl } = {}) {
     if (!isBackendConfigured()) throw new Error('InsForge is not configured for this frontend.');
     const { data, error } = await insforge.auth.signInWithOAuth('google', {
@@ -707,8 +704,6 @@ export function createRepairApi(options = {}) {
     resendVerificationEmail,
     signInWithGoogle,
     signOut,
-    verifyEmail,
-    resendVerificationEmail,
     sendResetPasswordEmail,
     exchangeResetPasswordToken,
     resetPassword,
@@ -731,8 +726,6 @@ export const verifyEmail = defaultApi.verifyEmail;
 export const resendVerificationEmail = defaultApi.resendVerificationEmail;
 export const signInWithGoogle = defaultApi.signInWithGoogle;
 export const signOut = defaultApi.signOut;
-export const verifyEmail = defaultApi.verifyEmail;
-export const resendVerificationEmail = defaultApi.resendVerificationEmail;
 export const sendResetPasswordEmail = defaultApi.sendResetPasswordEmail;
 export const exchangeResetPasswordToken = defaultApi.exchangeResetPasswordToken;
 export const resetPassword = defaultApi.resetPassword;
