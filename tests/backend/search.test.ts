@@ -8,7 +8,7 @@ describe('contractor search helpers', () => {
       brand: 'Kohler',
       model_name: 'K-123',
       location_text: 'Oakland, CA',
-    })).toBe('Kohler K-123 plumbing repair Oakland, CA');
+    })).toBe('Kohler K-123 licensed plumber plumbing repair Oakland, CA');
   });
 
   it('returns three deterministic mock contractors with requested category and location', () => {
@@ -44,7 +44,7 @@ describe('contractor search helpers', () => {
         location_text: 'San Jose, CA',
         source: 'serpapi',
         source_ref: 'abc',
-        metadata: { rating: 4.8 },
+        metadata: { rating: 4.8, reviewCount: null, address: null, hours: null },
       },
     ]);
   });

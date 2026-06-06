@@ -2,7 +2,38 @@ import type { NormalizedAnalysis } from './types.ts';
 
 type RawAnalysis = Record<string, unknown>;
 
-const DEFAULT_MODEL = 'openai/gpt-4o-mini';
+const DEFAULT_OPENROUTER_MODEL = 'openai/gpt-4o-mini';
+const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash';
+
+const VISION_SYSTEM_PROMPT = [
+  'You are an expert home services identification agent.',
+  'Analyze photos to determine what home service the user needs.',
+  'This could be: appliance repair, painting, plumbing, electrical, roofing, carpentry, landscaping, cleaning, or any other home maintenance service.',
+  '',
+  'For the category field, use one of: "hvac", "electrical", "plumbing", "painting", "roofing", "carpentry", "landscaping", "cleaning", "appliance", "general", "other".',
+  '',
+  'CRITICAL RULES:',
+  '- Do NOT default to "hvac" — look at what is ACTUALLY in the image.',
+  '- If you see WOOD (damaged, rotting, scratched, warped), the category is "carpentry".',
+  '- If you see PAINT (peeling, faded, stained walls/surfaces), the category is "painting".',
+  '- If you see PIPES, WATER, or LEAKS, the category is "plumbing".',
+  '- If you see WIRES, OUTLETS, or ELECTRICAL panels, the category is "electrical".',
+  '- If you see ROOF damage, missing shingles, or gutters, the category is "roofing".',
+  '- If you see PLANTS, YARD, LAWN, or GARDEN issues, the category is "landscaping".',
+  '- If you see a DIRTY or MESSY area, the category is "cleaning".',
+  '- Only use "hvac" if you SPECIFICALLY see an HVAC unit, air conditioner, furnace, or thermostat.',
+  '- Only set brand and modelNumber when a specific manufactured appliance with visible branding is present.',
+  '- If you cannot identify the issue, set isIdentified to false and ask for a better photo.',
+  '',
+  'Return ONLY a JSON object with these fields:',
+  '{ "isIdentified": boolean, "category": string, "brand": string|null, "modelNumber": string|null, "messageToUser": string, "contractorSearchQuery": string|null }',
+  '',
+  'For contractorSearchQuery, create a search query that would find the RIGHT type of professional.',
+  'Examples: "carpenter woodwork repair", "house painter contractor", "licensed plumber", "HVAC repair technician".',
+  'Set contractorSearchQuery to null only when isIdentified is false.',
+].join('\n');
+
+const VISION_USER_PROMPT = 'Analyze this photo. What home service or repair does the user need? Identify the issue category, and if a specific appliance is visible, identify the brand and model. Look carefully at the actual content of the image — do not assume it is an HVAC unit.';
 
 export function parseJsonObject(text: string): Record<string, unknown> {
   let cleaned = text.trim();
@@ -80,42 +111,119 @@ export function createMockAnalysis(_imageUrl: string): NormalizedAnalysis {
   });
 }
 
-export async function analyzeRepairImage(
-  imageUrl: string,
-  options: { apiKey?: string; model?: string } = {},
-): Promise<NormalizedAnalysis> {
-  if (!options.apiKey) {
-    return createMockAnalysis(imageUrl);
+/**
+ * Fetch an image URL and return its base64 representation and MIME type.
+ */
+async function fetchImageAsBase64(imageUrl: string): Promise<{ base64: string; mimeType: string }> {
+  // Handle data: URLs directly
+  if (imageUrl.startsWith('data:')) {
+    const match = imageUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (match) {
+      return { mimeType: match[1], base64: match[2] };
+    }
+    throw new Error('Invalid data URL format');
   }
 
+  const response = await fetch(imageUrl, {
+    headers: { 'Accept': 'image/*' },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch image: HTTP ${response.status}`);
+  }
+
+  const contentType = response.headers.get('content-type') ?? 'image/jpeg';
+  const mimeType = contentType.split(';')[0].trim().toLowerCase();
+  const arrayBuffer = await response.arrayBuffer();
+
+  // Convert ArrayBuffer to base64 in Deno
+  const uint8Array = new Uint8Array(arrayBuffer);
+  let binary = '';
+  for (let i = 0; i < uint8Array.length; i++) {
+    binary += String.fromCharCode(uint8Array[i]);
+  }
+  const base64 = btoa(binary);
+
+  return { base64, mimeType };
+}
+
+/**
+ * Analyze an image using the Google Gemini Vision API directly.
+ */
+async function analyzeWithGemini(
+  imageUrl: string,
+  apiKey: string,
+  model: string = DEFAULT_GEMINI_MODEL,
+): Promise<NormalizedAnalysis> {
+  const { base64, mimeType } = await fetchImageAsBase64(imageUrl);
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      systemInstruction: {
+        parts: [{ text: VISION_SYSTEM_PROMPT }],
+      },
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType, data: base64 } },
+            { text: VISION_USER_PROMPT },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 1024,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Gemini analysis failed: ${response.status} ${body}`);
+  }
+
+  const completion = await response.json();
+  const content = completion?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (typeof content !== 'string') {
+    throw new Error('Gemini analysis returned no message content');
+  }
+
+  return normalizeAnalysis(parseJsonObject(content));
+}
+
+/**
+ * Analyze an image using OpenRouter API (fallback).
+ */
+async function analyzeWithOpenRouter(
+  imageUrl: string,
+  apiKey: string,
+  model: string = DEFAULT_OPENROUTER_MODEL,
+): Promise<NormalizedAnalysis> {
   const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${options.apiKey}`,
+      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
       'HTTP-Referer': 'https://agentrabbit.local',
       'X-Title': 'AgentRabbit',
     },
     body: JSON.stringify({
-      model: options.model ?? DEFAULT_MODEL,
+      model,
       temperature: 0.1,
       messages: [
         {
           role: 'system',
-          content: [
-            'You are an expert home services identification agent.',
-            'Analyze photos to determine what home service the user needs: appliance repair, painting, plumbing, electrical, roofing, carpentry, landscaping, cleaning, or other maintenance.',
-            'For the category field, use one of: "hvac", "electrical", "plumbing", "painting", "roofing", "carpentry", "landscaping", "cleaning", "appliance", "general", "other".',
-            'Return only JSON with isIdentified, category, brand, modelNumber, messageToUser, contractorSearchQuery.',
-            'Only set brand and modelNumber when a specific appliance is visible.',
-            'If the image is insufficient, set isIdentified false and use messageToUser as the next question.',
-            'Do NOT default to "hvac" — look at what is ACTUALLY in the image.',
-          ].join(' '),
+          content: VISION_SYSTEM_PROMPT,
         },
         {
           role: 'user',
           content: [
-            { type: 'text', text: 'Analyze this photo. What home service or repair does the user need? Identify the issue category, and if a specific appliance is visible, identify the brand and model.' },
+            { type: 'text', text: VISION_USER_PROMPT },
             { type: 'image_url', image_url: { url: imageUrl } },
           ],
         },
@@ -135,6 +243,45 @@ export async function analyzeRepairImage(
   }
 
   return normalizeAnalysis(parseJsonObject(content));
+}
+
+/**
+ * Main entry point for image analysis.
+ * Tries Gemini first, then OpenRouter, then falls back to mock.
+ */
+export async function analyzeRepairImage(
+  imageUrl: string,
+  options: {
+    apiKey?: string;
+    model?: string;
+    geminiApiKey?: string;
+    geminiModel?: string;
+  } = {},
+): Promise<NormalizedAnalysis> {
+  // Try Gemini Vision first (preferred — already have the API key)
+  if (options.geminiApiKey) {
+    try {
+      return await analyzeWithGemini(
+        imageUrl,
+        options.geminiApiKey,
+        options.geminiModel ?? DEFAULT_GEMINI_MODEL,
+      );
+    } catch (error) {
+      console.error('Gemini analysis failed, trying OpenRouter fallback:', error);
+    }
+  }
+
+  // Try OpenRouter as fallback
+  if (options.apiKey) {
+    try {
+      return await analyzeWithOpenRouter(imageUrl, options.apiKey, options.model);
+    } catch (error) {
+      console.error('OpenRouter analysis failed, using mock:', error);
+    }
+  }
+
+  // Last resort: mock
+  return createMockAnalysis(imageUrl);
 }
 
 export function parseContractorReply(messageBody: string): {
