@@ -43,10 +43,58 @@ describe('frontend InsForge integration helper', () => {
 
     expect(serviceSource).toContain("signInWithOAuth('google'");
     expect(serviceSource).toContain('signInWithGoogle');
+    expect(serviceSource).toContain('verifyEmail');
+    expect(serviceSource).toContain('resendVerificationEmail');
+    expect(appSource).toContain('name="otp"');
+    expect(appSource).toContain('Verify Email');
+    expect(appSource).toContain('Resend code');
     expect(appSource).toContain("refreshAuthState({ requireLogin: true })");
     expect(appSource).toContain('if (!requireSignedIn()) return;');
     expect(appSource).toContain('Continue with Google');
     expect(appSource).toContain('required: true');
+  });
+
+  it('verifies and resends email verification codes through the InsForge SDK', async () => {
+    const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
+    const { createRepairApi } = await import(serviceUrl);
+    const verifyEmail = vi.fn().mockResolvedValue({
+      data: { user: { id: 'user-1', email: 'test@example.com', emailVerified: true }, accessToken: 'token' },
+      error: null,
+    });
+    const resendVerificationEmail = vi.fn().mockResolvedValue({
+      data: { success: true, message: 'Verification email sent' },
+      error: null,
+    });
+
+    const api = createRepairApi({
+      config: {
+        baseUrl: 'https://pzv974n7.us-east.insforge.app',
+        anonKey: 'anon',
+        useMock: false,
+      },
+      insforge: {
+        auth: {
+          getCurrentUser: vi.fn(),
+          verifyEmail,
+          resendVerificationEmail,
+        },
+      },
+    });
+
+    await expect(api.verifyEmail({ email: 'test@example.com', otp: '123456' })).resolves.toEqual({
+      user: { id: 'user-1', email: 'test@example.com', emailVerified: true },
+      accessToken: 'token',
+    });
+    await expect(api.resendVerificationEmail({
+      email: 'test@example.com',
+      redirectTo: 'http://localhost:3000/',
+    })).resolves.toEqual({ success: true, message: 'Verification email sent' });
+
+    expect(verifyEmail).toHaveBeenCalledWith({ email: 'test@example.com', otp: '123456' });
+    expect(resendVerificationEmail).toHaveBeenCalledWith({
+      email: 'test@example.com',
+      redirectTo: 'http://localhost:3000/',
+    });
   });
 
   it('direct-uploads storage files and stores normalized metadata before analysis', async () => {

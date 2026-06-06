@@ -338,6 +338,20 @@ export function createRepairApi(options = {}) {
     return data;
   }
 
+  async function verifyEmail({ email, otp }) {
+    if (!isBackendConfigured()) throw new Error('InsForge is not configured for this frontend.');
+    const { data, error } = await insforge.auth.verifyEmail({ email, otp });
+    if (error) throw error;
+    return data;
+  }
+
+  async function resendVerificationEmail({ email, redirectTo }) {
+    if (!isBackendConfigured()) throw new Error('InsForge is not configured for this frontend.');
+    const { data, error } = await insforge.auth.resendVerificationEmail({ email, redirectTo });
+    if (error) throw error;
+    return data;
+  }
+
   async function signInWithGoogle({ redirectTo = globalThis.location?.origin ?? config.baseUrl } = {}) {
     if (!isBackendConfigured()) throw new Error('InsForge is not configured for this frontend.');
     const { data, error } = await insforge.auth.signInWithOAuth('google', {
@@ -502,6 +516,8 @@ export function createRepairApi(options = {}) {
     getCurrentUser,
     signIn,
     signUp,
+    verifyEmail,
+    resendVerificationEmail,
     signInWithGoogle,
     signOut,
     analyzeImage,
@@ -518,6 +534,8 @@ export const isBackendConfigured = defaultApi.isBackendConfigured;
 export const getCurrentUser = defaultApi.getCurrentUser;
 export const signIn = defaultApi.signIn;
 export const signUp = defaultApi.signUp;
+export const verifyEmail = defaultApi.verifyEmail;
+export const resendVerificationEmail = defaultApi.resendVerificationEmail;
 export const signInWithGoogle = defaultApi.signInWithGoogle;
 export const signOut = defaultApi.signOut;
 export const analyzeImage = defaultApi.analyzeImage;
