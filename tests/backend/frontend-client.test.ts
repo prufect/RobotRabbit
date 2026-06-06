@@ -43,6 +43,14 @@ describe('frontend InsForge integration helper', () => {
     expect(source).not.toContain("./services/mockApi.js");
   });
 
+  it('auto-starts contractor outreach after presenting the top matches', () => {
+    const source = readFileSync('frontend/app.js', 'utf8');
+
+    expect(source).toContain("I'm contacting the top 3 now.");
+    expect(source).toContain('startNegotiation(autoNegotiationButton);');
+    expect(source).not.toContain('Should I negotiate rates and check their availability for you?');
+  });
+
   it('requires frontend auth and exposes Google OAuth when InsForge is configured', () => {
     const appSource = readFileSync('frontend/app.js', 'utf8');
     const serviceSource = readFileSync('frontend/services/insforgeApi.js', 'utf8');

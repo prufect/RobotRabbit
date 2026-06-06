@@ -12,6 +12,7 @@ const requiredKeys = [
   'TWILIO_AUTH_TOKEN',
   'TWILIO_WHATSAPP_FROM',
   'TELEGRAM_BOT_TOKEN',
+  'TELEGRAM_CHAT_ID',
 ];
 
 describe('.env.example', () => {

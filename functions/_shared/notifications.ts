@@ -36,6 +36,64 @@ export function createMockNotification(input: {
   };
 }
 
+function buildDemoContractorMessage(contractorName: string, message: string): string {
+  return `[Demo contractor: ${contractorName}]\n${message}`;
+}
+
+export function createTelegramNotification(input: {
+  requestId: string;
+  userId: string;
+  contractorId: string | null;
+  contractorName: string;
+  telegramChatId: string;
+  message: string;
+  providerMessageId?: string | null;
+}): NotificationInsert {
+  return {
+    request_id: input.requestId,
+    user_id: input.userId,
+    contractor_id: input.contractorId,
+    channel: 'telegram',
+    destination: input.telegramChatId,
+    status: 'sent',
+    message: buildDemoContractorMessage(input.contractorName, input.message),
+    provider_message_id: input.providerMessageId ?? null,
+    last_error: null,
+  };
+}
+
+export async function sendTelegramNotification(input: {
+  botToken: string;
+  chatId: string;
+  message: string;
+}): Promise<string> {
+  const response = await fetch(`https://api.telegram.org/bot${input.botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: input.chatId,
+      text: input.message,
+      disable_web_page_preview: false,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Telegram send failed: ${response.status} ${await response.text()}`);
+  }
+
+  const payload = await response.json() as {
+    ok?: boolean;
+    description?: string;
+    result?: { message_id?: string | number };
+  };
+
+  if (payload.ok === false) {
+    throw new Error(`Telegram send failed: ${payload.description ?? 'unknown error'}`);
+  }
+
+  return String(payload.result?.message_id ?? '');
+}
+
 export async function sendWhatsAppNotification(input: {
   accountSid: string;
   authToken: string;
@@ -64,28 +122,4 @@ export async function sendWhatsAppNotification(input: {
 
   const payload = await response.json();
   return String(payload.sid ?? '');
-}
-
-export async function sendTelegramNotification(input: {
-  botToken: string;
-  chatId: string;
-  message: string;
-}): Promise<string> {
-  const response = await fetch(`https://api.telegram.org/bot${input.botToken}/sendMessage`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      chat_id: input.chatId,
-      text: input.message,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Telegram send failed: ${response.status} ${await response.text()}`);
-  }
-
-  const payload = await response.json();
-  return String(payload.result?.message_id ?? '');
 }

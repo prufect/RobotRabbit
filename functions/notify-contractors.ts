@@ -1,5 +1,11 @@
 import { createAdminClient, createClient } from 'npm:@insforge/sdk';
-import { buildContractorMessage, createMockNotification, sendWhatsAppNotification, sendTelegramNotification } from './_shared/notifications.ts';
+import {
+  buildContractorMessage,
+  createMockNotification,
+  createTelegramNotification,
+  sendTelegramNotification,
+  sendWhatsAppNotification,
+} from './_shared/notifications.ts';
 import {
   adminApiKey,
   edgeBaseUrl,
@@ -67,32 +73,30 @@ export default async function notifyContractors(req: Request): Promise<Response>
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
     const twilioFrom = Deno.env.get('TWILIO_WHATSAPP_FROM');
-    
     const telegramBotToken = Deno.env.get('TELEGRAM_BOT_TOKEN');
-    const telegramChatId = Deno.env.get('TELEGRAM_CHAT_ID') || Deno.env.get('TELEGRAM_TEST_CHAT_ID');
+    const telegramChatId = Deno.env.get('TELEGRAM_CHAT_ID') ?? Deno.env.get('TELEGRAM_DEMO_CHAT_ID');
 
     const notifications: NotificationInsert[] = [];
     const errors: string[] = [];
 
     for (const contractor of contractors) {
-      if (contractor.id === 'test-contractor' && telegramBotToken && telegramChatId) {
+      if (telegramBotToken && telegramChatId) {
         try {
+          const telegramMessage = `[Demo contractor: ${contractor.name}]\n${message}`;
           const messageId = await sendTelegramNotification({
             botToken: telegramBotToken,
             chatId: telegramChatId,
-            message,
+            message: telegramMessage,
           });
-          notifications.push({
-            request_id: repairRequest.id,
-            user_id: repairRequest.user_id,
-            contractor_id: contractor.id,
-            channel: 'telegram',
-            destination: telegramChatId,
-            status: 'sent',
+          notifications.push(createTelegramNotification({
+            requestId: repairRequest.id,
+            userId: repairRequest.user_id,
+            contractorId: contractor.id,
+            contractorName: contractor.name,
+            telegramChatId,
             message,
-            provider_message_id: messageId,
-            last_error: null,
-          });
+            providerMessageId: messageId,
+          }));
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Telegram send failed';
           errors.push(`${contractor.name}: ${errorMessage}`);
@@ -103,7 +107,7 @@ export default async function notifyContractors(req: Request): Promise<Response>
             channel: 'telegram',
             destination: telegramChatId,
             status: 'failed',
-            message,
+            message: `[Demo contractor: ${contractor.name}]\n${message}`,
             provider_message_id: null,
             last_error: errorMessage,
           });
