@@ -101,16 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const greeting = document.createElement('div');
   greeting.className = 'greeting-section';
   greeting.innerHTML = `
-    <div class="greeting-top">
-      <div class="greeting-text">
-        <span class="greeting-name">Hello Alex</span>
-        <span class="greeting-welcome">Welcome Back</span>
-      </div>
-      <button class="messages-btn" id="dashboard-messages-btn">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-        Messages
-      </button>
-    </div>
+
     <h2 class="greeting-hero">Good Morning<br>What Needs Fixing Today?</h2>
     <div class="location-bar">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
@@ -119,11 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
   `;
   dashboard.appendChild(greeting);
 
-  // Wire dashboard Messages button to open the message center
-  greeting.querySelector('#dashboard-messages-btn').addEventListener('click', () => {
-    const mcToggle = header.querySelector('.mc-toggle');
-    if (mcToggle) mcToggle.click();
-  });
+
   
   const quickActions = document.createElement('div');
   quickActions.className = 'quick-actions-grid';
@@ -165,6 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
   mainContent.appendChild(dashboard);
 
   const chatWindow = createChatWindow(mainContent);
+  chatWindow.el.style.display = 'none';
   const originalAddMessage = chatWindow.addMessage;
   chatWindow.addMessage = function(msg) {
     const bubble = originalAddMessage(msg);
@@ -269,7 +257,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const button = document.createElement('button');
     button.className = `auth-pill ${currentUser ? '' : 'primary'}`;
     button.type = 'button';
-    button.textContent = currentUser?.email ?? 'Sign in';
+    button.textContent = currentUser ? 'Sign out' : 'Sign in';
     button.addEventListener('click', async () => {
       if (!currentUser) {
         openAuthModal('sign-in', {
@@ -308,6 +296,12 @@ document.addEventListener('DOMContentLoaded', () => {
             imageUrl: msg.metadata?.imageUrl || null
           });
         });
+        
+        if (dashboard && dashboard.parentNode) {
+          dashboard.style.display = 'none';
+        }
+        chatWindow.el.style.display = 'flex';
+        
         chatWindow.scrollToBottom();
       } else if (session === null) {
         chatWindow.clear();
@@ -517,12 +511,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!requireSignedIn()) return;
 
     // Hide the dashboard when a chat starts
-    if (dashboard && dashboard.parentNode) {
+    if (dashboard && dashboard.parentNode && dashboard.style.display !== 'none') {
       dashboard.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
       dashboard.style.opacity = '0';
       dashboard.style.transform = 'translateY(-10px)';
       setTimeout(() => { dashboard.style.display = 'none'; }, 300);
     }
+    
+    chatWindow.el.style.display = 'flex';
 
     lastInputMode = isVoice ? 'voice' : 'text';
     const id = generateId();
