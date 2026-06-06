@@ -105,6 +105,144 @@ function chooseBestOffer(contractors) {
     })[0];
 }
 
+function rowTimestamp(row) {
+  return row?.created_at ?? row?.updated_at ?? row?.at ?? new Date().toISOString();
+}
+
+function contractorIndex(contractors) {
+  return new Map(
+    contractors
+      .filter(contractor => contractor?.id)
+      .map(contractor => [contractor.id, contractor]),
+  );
+}
+
+function ensureConversation(conversations, key, fallback = {}) {
+  if (!conversations.has(key)) {
+    conversations.set(key, {
+      phone: fallback.phone ?? key,
+      name: fallback.name ?? null,
+      requestId: fallback.requestId ?? null,
+      messages: [],
+    });
+  }
+
+  const conversation = conversations.get(key);
+  if (!conversation.name && fallback.name) conversation.name = fallback.name;
+  if (!conversation.requestId && fallback.requestId) conversation.requestId = fallback.requestId;
+  return conversation;
+}
+
+function conversationKey({ phone, contractorId, name, fallback }) {
+  return phone ?? contractorId ?? name ?? fallback;
+}
+
+function pushConversationMessage(conversation, message) {
+  conversation.messages.push({
+    id: message.id,
+    direction: message.direction,
+    channel: message.channel,
+    kind: message.kind,
+    body: message.body,
+    at: message.at,
+  });
+}
+
+function requestTimelineConversation(session, conversations) {
+  const timeline = Array.isArray(session?.messages) ? session.messages : [];
+  if (!timeline.length) return;
+
+  const conversation = ensureConversation(conversations, `request-${session.requestId}`, {
+    phone: `request-${session.requestId}`,
+    name: 'RobotRabbit Agent',
+    requestId: session.requestId,
+  });
+
+  for (const message of timeline) {
+    pushConversationMessage(conversation, {
+      id: message.id ?? `message-${conversation.messages.length}`,
+      direction: message.role === 'user' ? 'inbound' : 'outbound',
+      channel: 'insforge',
+      kind: message.message_type ?? message.role ?? 'message',
+      body: message.content ?? '',
+      at: rowTimestamp(message),
+    });
+  }
+}
+
+export function buildConversationsFromStatus(status, activeContractors = []) {
+  const session = status?.session;
+  if (!session?.requestId) return [];
+
+  const conversations = new Map();
+  const contractorsById = contractorIndex(activeContractors);
+
+  for (const notification of Array.isArray(session.notifications) ? session.notifications : []) {
+    const contractor = contractorsById.get(notification.contractor_id);
+    const key = conversationKey({
+      phone: contractor?.phone ?? notification.destination,
+      contractorId: notification.contractor_id,
+      name: contractor?.name,
+      fallback: `notification-${notification.id}`,
+    });
+    const conversation = ensureConversation(conversations, key, {
+      phone: contractor?.phone ?? notification.destination ?? key,
+      name: contractor?.name ?? notification.destination ?? 'Service Provider',
+      requestId: session.requestId,
+    });
+
+    pushConversationMessage(conversation, {
+      id: notification.id,
+      direction: 'outbound',
+      channel: notification.channel ?? 'insforge',
+      kind: notification.status ?? 'outreach',
+      body: notification.message ?? '',
+      at: rowTimestamp(notification),
+    });
+  }
+
+  for (const quote of Array.isArray(session.quotes) ? session.quotes : []) {
+    const contractor = contractorsById.get(quote.contractor_id);
+    const key = conversationKey({
+      phone: quote.contractor_phone ?? contractor?.phone,
+      contractorId: quote.contractor_id,
+      name: quote.contractor_name ?? contractor?.name,
+      fallback: `quote-${quote.id}`,
+    });
+    const conversation = ensureConversation(conversations, key, {
+      phone: quote.contractor_phone ?? contractor?.phone ?? key,
+      name: quote.contractor_name ?? contractor?.name ?? 'Service Provider',
+      requestId: session.requestId,
+    });
+
+    pushConversationMessage(conversation, {
+      id: quote.id,
+      direction: 'inbound',
+      channel: 'insforge',
+      kind: 'quote',
+      body: quote.raw_message ?? `${quote.available === false ? 'Unavailable' : 'Available'}${quote.price ? `, $${quote.price}` : ''}`,
+      at: rowTimestamp(quote),
+    });
+  }
+
+  if (conversations.size === 0) {
+    requestTimelineConversation(session, conversations);
+  }
+
+  return [...conversations.values()]
+    .map((conversation) => {
+      conversation.messages.sort((a, b) => new Date(a.at) - new Date(b.at));
+      const last = conversation.messages.at(-1);
+      return {
+        ...conversation,
+        messageCount: conversation.messages.length,
+        lastMessageAt: last?.at ?? null,
+        lastMessage: last?.body ?? null,
+      };
+    })
+    .sort((a, b) => new Date(b.lastMessageAt ?? 0) - new Date(a.lastMessageAt ?? 0));
+}
+
 function assertSdkResult(result, fallbackMessage) {
   if (result?.error) throw result.error;
   if (!result?.data) throw new Error(fallbackMessage);
@@ -295,6 +433,7 @@ export function createRepairApi(options = {}) {
 
   let activeRequestId = null;
   let activeContractorIds = [];
+  let activeContractors = [];
 
   function isBackendConfigured() {
     return Boolean(insforge) && !config.useMock && (injectedClient || Boolean(config.baseUrl && config.anonKey));
@@ -397,6 +536,7 @@ export function createRepairApi(options = {}) {
 
     activeRequestId = requestId;
     activeContractorIds = [];
+    activeContractors = [];
 
     const analysis = await insforge.functions.invoke('analyze', {
       body: { requestId },
@@ -415,10 +555,22 @@ export function createRepairApi(options = {}) {
     return fallbackApi.analyzeVoice(transcript);
   }
 
-  // Message Center conversations come straight from Track 3 (independent of the
-  // InsForge SDK), so we always defer to the chosen fallback client.
   async function getConversations() {
-    return fallbackApi.getConversations();
+    if (!isBackendConfigured()) {
+      return config.useMock ? fallbackApi.getConversations() : [];
+    }
+
+    if (!activeRequestId) return [];
+
+    try {
+      return buildConversationsFromStatus(
+        await getRepairStatus(activeRequestId),
+        activeContractors,
+      );
+    } catch (error) {
+      console.warn('getConversations failed:', error?.message ?? error);
+      return [];
+    }
   }
 
   async function searchContractors(query, location = config.locationText) {
@@ -432,9 +584,11 @@ export function createRepairApi(options = {}) {
     const data = assertSdkResult(response, 'Contractor search did not return results.');
     activeContractorIds = Array.isArray(data.contractorIds) ? data.contractorIds : [];
 
-    return Array.isArray(data.results)
+    const results = Array.isArray(data.results)
       ? data.results.map(normalizeContractor)
       : [];
+    activeContractors = results;
+    return results;
   }
 
   async function getRepairStatus(requestId = activeRequestId) {

@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
   appContainer.appendChild(header);
   const authStatus = header.querySelector('#auth-status');
 
-  // Message Center — live agent ↔ contractor conversations (Track 3).
+  // Message Center — live agent ↔ contractor conversations.
   const messageCenter = createMessageCenter({ getConversations });
   header.insertBefore(messageCenter.button, authStatus);
   

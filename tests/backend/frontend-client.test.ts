@@ -30,6 +30,12 @@ describe('frontend InsForge integration helper', () => {
     expect(source).toContain("functions.invoke('status'");
   });
 
+  it('keeps hidden Message Center elements from intercepting clicks', () => {
+    const source = readFileSync('frontend/style.css', 'utf8');
+
+    expect(source).toMatch(/\[hidden\]\s*\{\s*display:\s*none\s*!important;\s*\}/);
+  });
+
   it('uses the real InsForge adapter from the Vercel frontend entrypoint', () => {
     const source = readFileSync('frontend/app.js', 'utf8');
 
@@ -95,6 +101,71 @@ describe('frontend InsForge integration helper', () => {
       email: 'test@example.com',
       redirectTo: 'http://localhost:3000/',
     });
+  });
+
+  it('does not poll the stale Track 3 conversations endpoint before InsForge has a request', async () => {
+    const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
+    const { createRepairApi } = await import(serviceUrl);
+    const fallbackApi = { getConversations: vi.fn().mockResolvedValue([{ phone: '+1' }]) };
+
+    const api = createRepairApi({
+      config: {
+        baseUrl: 'https://pzv974n7.us-east.insforge.app',
+        anonKey: '',
+        useMock: false,
+      },
+      fallbackApi,
+    });
+
+    await expect(api.getConversations()).resolves.toEqual([]);
+    expect(fallbackApi.getConversations).not.toHaveBeenCalled();
+  });
+
+  it('builds Message Center threads from the active InsForge status response', async () => {
+    const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
+    const { buildConversationsFromStatus } = await import(serviceUrl);
+
+    const conversations = buildConversationsFromStatus({
+      session: {
+        requestId: 'request-1',
+        notifications: [{
+          id: 'notification-1',
+          contractor_id: 'contractor-1',
+          channel: 'whatsapp',
+          destination: '+14155550101',
+          status: 'sent',
+          message: 'New job request.',
+          created_at: '2026-06-06T20:00:00.000Z',
+        }],
+        quotes: [{
+          id: 'quote-1',
+          contractor_id: 'contractor-1',
+          contractor_name: 'Bay Area Climate Pros',
+          contractor_phone: '+14155550101',
+          raw_message: 'YES, $120, today at 4pm',
+          available: true,
+          price: 120,
+          created_at: '2026-06-06T20:05:00.000Z',
+        }],
+        messages: [],
+      },
+    }, [{
+      id: 'contractor-1',
+      name: 'Bay Area Climate Pros',
+      phone: '+14155550101',
+    }]);
+
+    expect(conversations).toEqual([expect.objectContaining({
+      phone: '+14155550101',
+      name: 'Bay Area Climate Pros',
+      requestId: 'request-1',
+      messageCount: 2,
+      lastMessage: 'YES, $120, today at 4pm',
+    })]);
+    expect(conversations[0].messages).toEqual([
+      expect.objectContaining({ direction: 'outbound', body: 'New job request.' }),
+      expect.objectContaining({ direction: 'inbound', body: 'YES, $120, today at 4pm' }),
+    ]);
   });
 
   it('direct-uploads storage files and stores normalized metadata before analysis', async () => {

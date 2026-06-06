@@ -1,7 +1,7 @@
 /**
  * Message Center panel — shows the live agent <-> service-provider conversations
- * captured by Track 3 (/api/conversations). Slide-over from the right, polls
- * while open, with a header toggle button that surfaces an unread-style count.
+ * for the active repair request. Slide-over from the right, polls while open,
+ * with a header toggle button that surfaces an unread-style count.
  *
  * Usage:
  *   const mc = createMessageCenter({ getConversations });
