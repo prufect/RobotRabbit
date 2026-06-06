@@ -56,13 +56,16 @@ async function searchContractors(searchQuery) {
  * @param {object[]} contractors
  * @param {object}   issueDetails
  */
-async function notifyContractors(contractors, issueDetails) {
+async function notifyContractors(contractors, issueDetails, conversationId) {
   const url = `${config.TRACK3_BASE_URL}/api/notify-contractors`;
 
   try {
     await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Conversation-Id': conversationId ?? '',
+      },
       body: JSON.stringify({ contractors, issueDetails }),
       signal: AbortSignal.timeout(10_000),
     });
@@ -131,7 +134,7 @@ export async function analyzeHandler(req, res, next) {
         model: analysis.modelNumber,
         imageUrl,
         urgency: urgency ?? 'normal',
-      });
+      }, conversationId);
 
       console.info(JSON.stringify({
         level: 'info',
