@@ -53,6 +53,8 @@ export default async function analyze(req: Request): Promise<Response> {
     }]);
 
     const analysis = await analyzeRepairImage(repairRequest.image_url, {
+      geminiApiKey: Deno.env.get('GEMINI_API_KEY'),
+      geminiModel: Deno.env.get('GEMINI_MODEL'),
       apiKey: Deno.env.get('OPENROUTER_API_KEY'),
       model: Deno.env.get('OPENROUTER_MODEL'),
     });

@@ -33,62 +33,93 @@ export async function analyzeImage(imageUrl, urgency) {
 export async function searchContractors(searchQuery, location) {
   await delay(1500);
   
+  // Parse the category from the search query
+  const query = (searchQuery || '').toLowerCase();
+  let categoryLabel = 'Home Repair';
+  let specialties = ['General repair', 'Maintenance'];
+  
+  if (query.includes('carpenter') || query.includes('wood') || query.includes('carpentry')) {
+    categoryLabel = 'Carpentry';
+    specialties = ['Woodwork', 'Cabinet repair', 'Deck & fence'];
+  } else if (query.includes('paint') || query.includes('painter')) {
+    categoryLabel = 'Painting';
+    specialties = ['Interior painting', 'Exterior painting', 'Drywall repair'];
+  } else if (query.includes('plumb') || query.includes('plumber')) {
+    categoryLabel = 'Plumbing';
+    specialties = ['Pipe repair', 'Drain cleaning', 'Water heater'];
+  } else if (query.includes('electric') || query.includes('electrician')) {
+    categoryLabel = 'Electrical';
+    specialties = ['Wiring', 'Panel upgrade', 'Outlet repair'];
+  } else if (query.includes('hvac') || query.includes('air condition') || query.includes('heating')) {
+    categoryLabel = 'HVAC';
+    specialties = ['AC repair', 'Furnace', 'Thermostat'];
+  } else if (query.includes('roof') || query.includes('roofing')) {
+    categoryLabel = 'Roofing';
+    specialties = ['Shingle repair', 'Leak repair', 'Gutter cleaning'];
+  } else if (query.includes('landscape') || query.includes('lawn') || query.includes('garden')) {
+    categoryLabel = 'Landscaping';
+    specialties = ['Lawn care', 'Tree trimming', 'Garden design'];
+  } else if (query.includes('clean') || query.includes('cleaning')) {
+    categoryLabel = 'Cleaning';
+    specialties = ['Deep cleaning', 'Move-in/out', 'Regular service'];
+  }
+  
   return [
     { 
       id: 'c1',
-      name: 'Bay Area Climate Pros', 
+      name: `Bay Area ${categoryLabel} Pros`, 
       phone: '+14155550101', 
       rating: 4.9, 
       distance: 2.3, 
       reviewCount: 412, 
       verified: { licensed: true, insured: true, bbComplaint: false },
-      specialties: ['Carrier certified', 'Emergency repair'], 
+      specialties: [specialties[0], 'Emergency repair'], 
       yearsExperience: 15,
       originalPrice: 185, 
       availability: 'Today, 4:00 PM' 
     },
     { 
       id: 'c2',
-      name: 'SwiftFix HVAC Services', 
+      name: `SwiftFix ${categoryLabel} Services`, 
       phone: '+14155550102', 
       rating: 4.7, 
       distance: 4.1, 
       reviewCount: 189, 
       verified: { licensed: true, insured: true, bbComplaint: false },
-      specialties: ['AC Repair', 'Maintenance'], 
+      specialties: [specialties[1], 'Maintenance'], 
       yearsExperience: 8,
       originalPrice: 150, 
       availability: 'Today, 6:30 PM' 
     },
     { 
       id: 'c3',
-      name: 'Martinez Heating & Air', 
+      name: `Martinez ${categoryLabel}`, 
       phone: '+14155550103', 
       rating: 4.5, 
       distance: 5.5, 
       reviewCount: 86, 
       verified: { licensed: true, insured: false, bbComplaint: false },
-      specialties: ['Residential HVAC'], 
+      specialties: [`Residential ${categoryLabel.toLowerCase()}`], 
       yearsExperience: 22,
       originalPrice: 140, 
       availability: 'Tomorrow, 9:00 AM' 
     },
     { 
       id: 'c4',
-      name: 'Elite Climate Control', 
+      name: `Elite ${categoryLabel} Co`, 
       phone: '+14155550104', 
       rating: 4.8, 
       distance: 8.2, 
       reviewCount: 305, 
       verified: { licensed: true, insured: true, bbComplaint: false },
-      specialties: ['Carrier', 'Trane', 'Lennox'], 
+      specialties: specialties, 
       yearsExperience: 12,
       originalPrice: 195, 
       availability: 'Tomorrow, 11:00 AM' 
     },
     { 
       id: 'c5',
-      name: 'SF City HVAC', 
+      name: `SF City ${categoryLabel}`, 
       phone: '+14155550105', 
       rating: 4.2, 
       distance: 1.5, 

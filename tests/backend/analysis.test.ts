@@ -48,7 +48,7 @@ describe('analysis helpers', () => {
     const mock = createMockAnalysis('https://example.com/photo.jpg');
 
     expect(mock.isIdentified).toBe(true);
-    expect(mock.category).toBe('hvac');
-    expect(mock.contractorSearchQuery).toContain('HVAC');
+    expect(mock.category).toBe('general');
+    expect(mock.contractorSearchQuery).toContain('home repair');
   });
 });

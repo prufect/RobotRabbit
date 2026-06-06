@@ -531,6 +531,78 @@ export function createRepairApi(options = {}) {
     if (error) throw error;
   }
 
+  async function loadRecentSession() {
+    if (!isBackendConfigured()) return null;
+    const user = await requireCurrentUser().catch(() => null);
+    if (!user) return null;
+
+    const { data: requests } = await insforge.database
+      .from('repair_requests')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (!requests || requests.length === 0) return null;
+    activeRequestId = requests[0].id;
+
+    const { data: messages } = await insforge.database
+      .from('request_messages')
+      .select('*')
+      .eq('request_id', activeRequestId)
+      .order('created_at', { ascending: true });
+
+    return { request: requests[0], messages: messages || [] };
+  }
+
+  async function getOrCreateActiveRequest(urgency = 'normal') {
+    if (!isBackendConfigured()) return null;
+    const user = await requireCurrentUser().catch(() => null);
+    if (!user) return null;
+
+    if (activeRequestId) return activeRequestId;
+
+    const requestId = cryptoImpl.randomUUID();
+    const { error } = await insforge.database.from('repair_requests').insert([{
+      id: requestId,
+      user_id: user.id,
+      status: 'uploaded',
+      urgency,
+      location_text: config.locationText,
+      image_url: '',
+      image_key: '',
+    }]);
+    
+    if (!error) {
+      activeRequestId = requestId;
+      activeContractorIds = [];
+      activeContractors = [];
+    }
+    return activeRequestId;
+  }
+
+  async function saveMessage(role, content, messageType = 'text', imageUrl = null) {
+    if (!isBackendConfigured()) return;
+    const user = await requireCurrentUser().catch(() => null);
+    if (!user) return;
+
+    if (!activeRequestId) {
+      await getOrCreateActiveRequest();
+    }
+    if (!activeRequestId) return;
+
+    const metadata = imageUrl ? { imageUrl } : {};
+
+    await insforge.database.from('request_messages').insert([{
+      request_id: activeRequestId,
+      user_id: user.id,
+      role,
+      message_type: messageType,
+      content,
+      metadata
+    }]);
+  }
+
   async function analyzeImage(previewUrl, urgency = 'medium', file = null) {
     if (!isBackendConfigured() || !file) {
       return fallbackApi.analyzeImage(previewUrl, urgency);
@@ -561,6 +633,15 @@ export function createRepairApi(options = {}) {
     activeRequestId = requestId;
     activeContractorIds = [];
     activeContractors = [];
+
+    await insforge.database.from('request_messages').insert([{
+      request_id: activeRequestId,
+      user_id: user.id,
+      role: 'user',
+      message_type: 'image',
+      content: '',
+      metadata: { imageUrl: upload.data.url }
+    }]);
 
     const analysis = await insforge.functions.invoke('analyze', {
       body: { requestId },
@@ -773,6 +854,9 @@ export function createRepairApi(options = {}) {
     finalizeBooking,
     getRepairStatus,
     getConversations,
+    loadRecentSession,
+    getOrCreateActiveRequest,
+    saveMessage,
   };
 }
 
@@ -796,3 +880,6 @@ export const negotiateAndBook = defaultApi.negotiateAndBook;
 export const finalizeBooking = defaultApi.finalizeBooking;
 export const getRepairStatus = defaultApi.getRepairStatus;
 export const getConversations = defaultApi.getConversations;
+export const loadRecentSession = defaultApi.loadRecentSession;
+export const getOrCreateActiveRequest = defaultApi.getOrCreateActiveRequest;
+export const saveMessage = defaultApi.saveMessage;

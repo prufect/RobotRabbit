@@ -1,11 +1,31 @@
 import type { ContractorInsert, RepairRequest } from './types.ts';
 
+/**
+ * Map categories to better search query terms for finding the RIGHT contractors.
+ */
+const CATEGORY_SEARCH_TERMS: Record<string, string> = {
+  hvac: 'HVAC air conditioning heating repair',
+  electrical: 'licensed electrician electrical repair',
+  plumbing: 'licensed plumber plumbing repair',
+  painting: 'house painter painting contractor',
+  roofing: 'roof repair roofing contractor',
+  carpentry: 'carpenter woodwork repair contractor',
+  landscaping: 'landscaping lawn garden contractor',
+  cleaning: 'house cleaning service professional',
+  appliance: 'appliance repair technician',
+  architecture: 'residential architect home design',
+  general: 'home repair handyman contractor',
+  other: 'home repair maintenance contractor',
+};
+
 export function buildContractorQuery(request: Pick<RepairRequest, 'category' | 'brand' | 'model_name' | 'location_text'>): string {
+  const category = request.category ?? 'general';
+  const searchTerm = CATEGORY_SEARCH_TERMS[category] ?? CATEGORY_SEARCH_TERMS.general;
+
   return [
     request.brand,
     request.model_name,
-    request.category,
-    'repair',
+    searchTerm,
     request.location_text,
   ]
     .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
@@ -25,7 +45,7 @@ export function getMockContractors(category = 'home repair', locationText: strin
       location_text: location,
       source: 'mock',
       source_ref: 'mock-rapid-response',
-      metadata: { rating: 4.8 },
+      metadata: { rating: 4.8, reviewCount: 140 },
     },
     {
       name: `Bay Area ${label} Pros`,
@@ -35,7 +55,7 @@ export function getMockContractors(category = 'home repair', locationText: strin
       location_text: location,
       source: 'mock',
       source_ref: 'mock-bay-area-pros',
-      metadata: { rating: 4.6 },
+      metadata: { rating: 4.6, reviewCount: 116 },
     },
     {
       name: `Neighborhood ${label} Experts`,
@@ -45,7 +65,7 @@ export function getMockContractors(category = 'home repair', locationText: strin
       location_text: location,
       source: 'mock',
       source_ref: 'mock-neighborhood-experts',
-      metadata: { rating: 4.7 },
+      metadata: { rating: 4.7, reviewCount: 92 },
     },
   ];
 }
@@ -68,6 +88,14 @@ export function parseSerpApiResults(
           : null;
       if (!name) return null;
 
+      // Extract rating and review count from SerpAPI results
+      const rating = typeof record.rating === 'number' ? record.rating : null;
+      const reviewCount = typeof record.reviews === 'number'
+        ? record.reviews
+        : typeof record.reviews_original === 'string'
+          ? parseInt(record.reviews_original.replace(/[^0-9]/g, ''), 10) || null
+          : null;
+
       return {
         name,
         phone: typeof record.phone === 'string' ? record.phone : null,
@@ -83,7 +111,10 @@ export function parseSerpApiResults(
               ? record.link
               : null,
         metadata: {
-          rating: record.rating,
+          rating,
+          reviewCount,
+          address: typeof record.address === 'string' ? record.address : null,
+          hours: typeof record.hours === 'string' ? record.hours : null,
         },
       };
     })
