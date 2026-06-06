@@ -8,7 +8,20 @@ import { createContractorCards } from './components/ContractorCard.js';
 import { createBookingConfirm } from './components/BookingConfirm.js';
 import { createPriceIntel } from './components/PriceIntel.js';
 
-import { analyzeImage, analyzeVoice, searchContractors, negotiateAndBook } from './services/mockApi.js';
+import {
+  analyzeImage,
+  analyzeVoice,
+  searchContractors,
+  negotiateAndBook,
+  getCurrentUser,
+  signIn,
+  signUp,
+  signOut,
+  isAuthRequiredError,
+  isBackendConfigured,
+} from './services/insforgeApi.js';
+
+const logoUrl = new URL('./assets/logo.png', import.meta.url).href;
 
 // Fallback delay utility
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
@@ -22,16 +35,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const header = document.createElement('header');
   header.className = 'app-header glass';
   header.innerHTML = `
-    <img src="assets/logo.png" alt="RobotRabbit" class="header-logo">
-    <div style="display:flex; flex-direction:column; justify-content:center;">
+    <img src="${logoUrl}" alt="RobotRabbit" class="header-logo">
+    <div class="header-copy">
       <h1 style="font-size:1.1rem; font-weight:700; color:var(--text-primary); margin:0; line-height:1.2;">RobotRabbit</h1>
       <span style="font-size:0.75rem; color:var(--accent-tertiary); font-weight:600; display:flex; align-items:center; gap:4px;">
         <span style="display:inline-block; width:6px; height:6px; background:var(--accent-tertiary); border-radius:50%; box-shadow:0 0 6px var(--accent-tertiary);"></span>
         AI Agent Online
       </span>
     </div>
+    <div class="auth-status" id="auth-status"></div>
   `;
   appContainer.appendChild(header);
+  const authStatus = header.querySelector('#auth-status');
   
   // Main Content Area
   const mainContent = document.createElement('main');
@@ -91,6 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   let msgIdCounter = 0;
   let currentIssueContext = null;
+  let currentUser = null;
   
   function generateId() {
     return `msg-${++msgIdCounter}`;
@@ -101,8 +117,142 @@ document.addEventListener('DOMContentLoaded', () => {
     chatWindow.scrollToBottom();
     await wait(800 + Math.random() * 1000);
   }
+
+  function renderAuthState() {
+    authStatus.innerHTML = '';
+
+    if (!isBackendConfigured()) {
+      const badge = document.createElement('span');
+      badge.className = 'auth-pill muted';
+      badge.textContent = 'Mock mode';
+      authStatus.appendChild(badge);
+      return;
+    }
+
+    const button = document.createElement('button');
+    button.className = `auth-pill ${currentUser ? '' : 'primary'}`;
+    button.type = 'button';
+    button.textContent = currentUser?.email ?? 'Sign in';
+    button.addEventListener('click', async () => {
+      if (!currentUser) {
+        openAuthModal('sign-in');
+        return;
+      }
+
+      try {
+        await signOut();
+        currentUser = null;
+        renderAuthState();
+        chatWindow.addMessage({ id: generateId(), sender: 'agent', text: 'Signed out. I can still run the local demo flow.' });
+      } catch (error) {
+        chatWindow.addMessage({ id: generateId(), sender: 'agent', text: error.message || 'Sign out failed.' });
+      }
+    });
+    authStatus.appendChild(button);
+  }
+
+  async function refreshAuthState() {
+    try {
+      const session = await getCurrentUser();
+      currentUser = session.user;
+    } catch {
+      currentUser = null;
+    }
+    renderAuthState();
+  }
+
+  function openAuthModal(initialMode = 'sign-in') {
+    if (!isBackendConfigured()) return;
+
+    let mode = initialMode;
+    const overlay = document.createElement('div');
+    overlay.className = 'auth-overlay';
+    appContainer.appendChild(overlay);
+
+    function close() {
+      overlay.remove();
+    }
+
+    function render(message = '', isError = false) {
+      const title = mode === 'sign-up' ? 'Create Account' : 'Sign In';
+      overlay.innerHTML = `
+        <form class="auth-card glass-solid">
+          <div class="auth-card-header">
+            <h2>${title}</h2>
+            <button class="auth-close" type="button" aria-label="Close">&times;</button>
+          </div>
+          <div class="auth-tabs">
+            <button class="auth-tab ${mode === 'sign-in' ? 'active' : ''}" type="button" data-mode="sign-in">Sign In</button>
+            <button class="auth-tab ${mode === 'sign-up' ? 'active' : ''}" type="button" data-mode="sign-up">Sign Up</button>
+          </div>
+          <label class="auth-field">
+            <span>Email</span>
+            <input name="email" type="email" autocomplete="email" required>
+          </label>
+          <label class="auth-field">
+            <span>Password</span>
+            <input name="password" type="password" autocomplete="${mode === 'sign-up' ? 'new-password' : 'current-password'}" minlength="8" required>
+          </label>
+          ${mode === 'sign-up' ? `
+            <label class="auth-field">
+              <span>Name</span>
+              <input name="name" type="text" autocomplete="name">
+            </label>
+          ` : ''}
+          <div class="auth-message ${isError ? 'error' : ''}"></div>
+          <button class="btn-primary" type="submit">${title}</button>
+        </form>
+      `;
+
+      overlay.querySelector('.auth-message').textContent = message;
+      overlay.querySelector('.auth-close').addEventListener('click', close);
+      overlay.querySelectorAll('.auth-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          mode = tab.dataset.mode;
+          render();
+        });
+      });
+      overlay.querySelector('form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const submit = form.querySelector('button[type="submit"]');
+        const formData = new FormData(form);
+        submit.disabled = true;
+        submit.textContent = mode === 'sign-up' ? 'Creating...' : 'Signing in...';
+
+        try {
+          const email = String(formData.get('email') ?? '').trim();
+          const password = String(formData.get('password') ?? '');
+          const name = String(formData.get('name') ?? '').trim();
+
+          if (mode === 'sign-up') {
+            const data = await signUp({
+              email,
+              password,
+              name,
+              redirectTo: `${window.location.origin}/`,
+            });
+            if (data?.requireEmailVerification) {
+              render('Check your email to verify this account, then sign in.', false);
+              return;
+            }
+          } else {
+            await signIn({ email, password });
+          }
+
+          await refreshAuthState();
+          close();
+          chatWindow.addMessage({ id: generateId(), sender: 'agent', text: 'Signed in. I can now save photos, requests, contractor searches, and notifications in InsForge.' });
+        } catch (error) {
+          render(error.message || 'Authentication failed.', true);
+        }
+      });
+    }
+
+    render();
+  }
   
-  async function processUserInput(text, imageUrl = null) {
+  async function processUserInput(text, imageUrl = null, imageFile = null) {
     const id = generateId();
     chatWindow.addMessage({ id, sender: 'user', text, imageUrl });
     textInput.value = '';
@@ -114,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const urgency = urgencyToggle.getLevel();
     
     if (imageUrl) {
-      handleImageFlow(imageUrl, urgency);
+      handleImageFlow(imageUrl, urgency, imageFile);
     } else {
       handleTextFlow(text, urgency);
     }
@@ -122,12 +272,21 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // --- Core Application Flows ---
   
-  async function handleImageFlow(imageUrl, urgency) {
+  async function handleImageFlow(imageUrl, urgency, imageFile) {
     const activity = createAgentActivity(mainContent);
     const step1 = activity.addStep({ icon: '👁️', text: 'Analyzing image...', status: 'active' });
     chatWindow.scrollToBottom();
     
-    const result = await analyzeImage(imageUrl, urgency);
+    let result;
+    try {
+      result = await analyzeImage(imageUrl, urgency, imageFile);
+    } catch (error) {
+      activity.updateStep(step1, { icon: '!', status: 'pending' });
+      const message = error.message || 'I could not send this photo to the backend.';
+      chatWindow.addMessage({ id: generateId(), sender: 'agent', text: message });
+      if (isAuthRequiredError(error)) openAuthModal('sign-in');
+      return;
+    }
     
     if (!result.isIdentified) {
       activity.updateStep(step1, { icon: '❓', status: 'pending' });
@@ -161,7 +320,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   async function findAndPresentContractors(query, urgency, activity, searchStep) {
-    const contractors = await searchContractors(query, 'San Francisco');
+    let contractors;
+    try {
+      contractors = await searchContractors(query, 'San Francisco, CA');
+    } catch (error) {
+      activity.updateStep(searchStep, { icon: '!', status: 'pending' });
+      chatWindow.addMessage({ id: generateId(), sender: 'agent', text: error.message || 'Contractor search failed.' });
+      return;
+    }
+
     activity.updateStep(searchStep, { icon: '✅', text: `Found ${contractors.length} qualified pros`, status: 'done' });
     
     await wait(800);
@@ -198,22 +365,28 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentStepIdx = null;
     let finalBooking = null;
     
-    for await (const state of gen) {
-      if (currentStepIdx !== null) {
-        activity.updateStep(currentStepIdx, { icon: '✅', status: 'done' });
+    try {
+      for await (const state of gen) {
+        if (currentStepIdx !== null) {
+          activity.updateStep(currentStepIdx, { icon: '✅', status: 'done' });
+        }
+
+        let icon = '💬';
+        if (state.step === 'responses') icon = '📱';
+        if (state.step === 'negotiating') icon = '🤝';
+        if (state.step === 'comparing') icon = '📊';
+
+        if (state.step !== 'booked') {
+          currentStepIdx = activity.addStep({ icon, text: state.message, status: 'active' });
+        } else {
+          finalBooking = state.booking;
+        }
+        chatWindow.scrollToBottom();
       }
-      
-      let icon = '💬';
-      if (state.step === 'responses') icon = '📱';
-      if (state.step === 'negotiating') icon = '🤝';
-      if (state.step === 'comparing') icon = '📊';
-      
-      if (state.step !== 'booked') {
-        currentStepIdx = activity.addStep({ icon, text: state.message, status: 'active' });
-      } else {
-        finalBooking = state.booking;
-      }
-      chatWindow.scrollToBottom();
+    } catch (error) {
+      if (currentStepIdx !== null) activity.updateStep(currentStepIdx, { icon: '!', status: 'pending' });
+      chatWindow.addMessage({ id: generateId(), sender: 'agent', text: error.message || 'Negotiation failed.' });
+      return;
     }
     
     if (finalBooking) {
@@ -254,6 +427,8 @@ document.addEventListener('DOMContentLoaded', () => {
       text: 'Hi! I\'m RobotRabbit 🐰. I can help fix anything in your home. Describe the issue, or snap a photo of what\'s broken.' 
     });
   });
+
+  refreshAuthState();
   
   // Handle text input toggling send button
   function toggleSendVoiceBtn(hasText) {
@@ -284,8 +459,8 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Handle Camera Capture
   cameraContainer.addEventListener('photo-captured', (e) => {
-    const { dataUrl } = e.detail;
-    processUserInput('I took a photo of the issue.', dataUrl);
+    const { dataUrl, file } = e.detail;
+    processUserInput('I took a photo of the issue.', dataUrl, file);
   });
   
   // Handle Voice Input
