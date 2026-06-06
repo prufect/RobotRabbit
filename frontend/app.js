@@ -542,7 +542,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const step1 = activity.addStep({ icon: '🧠', text: 'Understanding issue...', status: 'active' });
     chatWindow.scrollToBottom();
     
-    const result = await analyzeVoice(text);
+    const result = await analyzeVoice(text, urgency);
     
     activity.updateStep(step1, { icon: '✅', text: `Category: ${result.category}`, status: 'done' });
     const step2 = activity.addStep({ icon: '🔍', text: 'Searching local professionals...', status: 'active' });

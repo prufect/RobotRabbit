@@ -246,6 +246,73 @@ describe('frontend InsForge integration helper', () => {
     expect(result.imageKey).toBe('users/user-1/requests/request-1/photo.jpg');
   });
 
+  it('creates an InsForge repair request for text issues before contractor search', async () => {
+    const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
+    const { createRepairApi } = await import(serviceUrl);
+    const insertSelect = vi.fn().mockResolvedValue({ data: [{ id: 'text-request-1' }], error: null });
+    const insert = vi.fn().mockReturnValue({ select: insertSelect });
+    const from = vi.fn().mockImplementation(() => ({ insert }));
+    const invoke = vi.fn().mockResolvedValue({
+      data: {
+        status: 'success',
+        results: [{ id: 'contractor-1', name: 'Bay Area Paint Pros', category: 'painting' }],
+        contractorIds: ['contractor-1'],
+      },
+      error: null,
+    });
+
+    const api = createRepairApi({
+      config: {
+        baseUrl: 'https://pzv974n7.us-east.insforge.app',
+        anonKey: 'anon',
+        useMock: false,
+        locationText: 'San Francisco, CA',
+      },
+      cryptoImpl: { randomUUID: () => 'text-request-1' },
+      fallbackApi: {
+        analyzeVoice: vi.fn().mockResolvedValue({
+          isIdentified: true,
+          category: 'painting',
+          brand: null,
+          modelNumber: null,
+          diagnosis: 'Interior painting request.',
+          messageToUser: 'I can help find painters.',
+          contractorSearchQuery: 'painting repair',
+        }),
+      },
+      insforge: {
+        auth: {
+          getCurrentUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null }),
+        },
+        database: { from },
+        functions: { invoke },
+      },
+    });
+
+    await expect(api.analyzeVoice('Find me painters', 'high')).resolves.toEqual(expect.objectContaining({
+      requestId: 'text-request-1',
+      category: 'painting',
+    }));
+    await expect(api.searchContractors('painting repair', 'San Francisco, CA')).resolves.toEqual([
+      expect.objectContaining({ id: 'test-contractor' }),
+      expect.objectContaining({ id: 'contractor-1', name: 'Bay Area Paint Pros' }),
+    ]);
+
+    expect(from).toHaveBeenCalledWith('repair_requests');
+    expect(insert).toHaveBeenCalledWith([expect.objectContaining({
+      id: 'text-request-1',
+      user_id: 'user-1',
+      status: 'identified',
+      category: 'painting',
+      image_url: 'text://repair-requests/text-request-1',
+      image_key: 'text-requests/text-request-1',
+      diagnosis: 'Interior painting request.',
+    })]);
+    expect(invoke).toHaveBeenCalledWith('search-contractors', {
+      body: { requestId: 'text-request-1' },
+    });
+  });
+
   it('optimizes camera PNGs and direct-uploads without hitting the presigned S3 path', async () => {
     const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
     const { createRepairApi } = await import(serviceUrl);
