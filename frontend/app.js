@@ -15,6 +15,7 @@ import {
   analyzeVoice,
   searchContractors,
   negotiateAndBook,
+  finalizeBooking,
   getConversations,
   getConversationMessages,
   getCurrentUser,
@@ -41,6 +42,49 @@ function escapeAttribute(value) {
     .replaceAll('"', '&quot;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;');
+}
+
+function createQuoteApprovalPrompt(proposal, onBook) {
+  const booking = proposal?.booking ?? {};
+  const contractorName = booking.contractor?.name ?? 'the contractor';
+  const price = Number.isFinite(Number(booking.negotiatedPrice))
+    ? `$${Number(booking.negotiatedPrice)}`
+    : 'Price TBD';
+  const date = booking.date ?? 'Date TBD';
+  const time = booking.time ?? 'Time TBD';
+  const card = document.createElement('div');
+  card.className = 'quote-approval-card glass fade-in';
+  card.innerHTML = `
+    <div class="quote-approval-eyebrow">Contractor reply</div>
+    <p class="quote-approval-text"></p>
+    <div class="quote-approval-details" aria-label="Quote details">
+      <div class="quote-approval-detail">
+        <span class="quote-approval-detail-label">Price</span>
+        <strong data-role="quote-price"></strong>
+      </div>
+      <div class="quote-approval-detail">
+        <span class="quote-approval-detail-label">Date</span>
+        <strong data-role="quote-date"></strong>
+      </div>
+      <div class="quote-approval-detail">
+        <span class="quote-approval-detail-label">Time</span>
+        <strong data-role="quote-time"></strong>
+      </div>
+    </div>
+    <button class="btn-primary quote-approval-book" type="button" data-action="book-quote">
+      Book ${escapeAttribute(contractorName)}
+    </button>
+  `;
+
+  card.querySelector('.quote-approval-text').textContent = proposal?.message ?? 'The contractor replied. Should we book?';
+  card.querySelector('[data-role="quote-price"]').textContent = price;
+  card.querySelector('[data-role="quote-date"]').textContent = date;
+  card.querySelector('[data-role="quote-time"]').textContent = time;
+  card.querySelector('[data-action="book-quote"]').addEventListener('click', (event) => {
+    onBook?.(event.currentTarget);
+  });
+
+  return card;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -683,6 +727,55 @@ document.addEventListener('DOMContentLoaded', () => {
     const gen = negotiateAndBook(contractors, { urgency });
     let currentStepIdx = null;
     let finalBooking = null;
+
+    const bookApprovedQuote = async (proposal, button) => {
+      if (button.dataset.busy === 'true') return;
+      const booking = proposal?.booking;
+      const contractorId = proposal?.contractorId ?? booking?.contractor?.id;
+      if (!booking || !contractorId) {
+        chatWindow.addMessage({ id: generateId(), sender: 'agent', text: 'I could not find the contractor quote to book.' });
+        return;
+      }
+
+      const previousLabel = button.textContent;
+      button.dataset.busy = 'true';
+      button.disabled = true;
+      button.textContent = 'Booking...';
+
+      const contractorName = booking.contractor?.name ?? 'the contractor';
+      const userBookMsg = `Book ${contractorName}.`;
+      chatWindow.addMessage({ id: generateId(), sender: 'user', text: userBookMsg });
+      saveMessage('user', userBookMsg).catch(console.error);
+
+      try {
+        await finalizeBooking(contractorId, booking.date, booking.time, proposal.quoteId);
+        button.textContent = 'Booked';
+
+        const quotedPrice = Number.isFinite(Number(booking.negotiatedPrice))
+          ? `$${Number(booking.negotiatedPrice)}`
+          : 'the quoted price';
+        const finalPriceMsg = `Done. ${contractorName} is booked for ${booking.date} at ${booking.time} for ${quotedPrice}.`;
+        chatWindow.addMessage({
+          id: generateId(),
+          sender: 'agent',
+          text: finalPriceMsg
+        });
+        saveMessage('assistant', finalPriceMsg, 'booking').catch(console.error);
+        messageCenter.refresh();
+
+        await wait(400);
+        bookingConfirm.show(booking);
+      } catch (error) {
+        button.dataset.busy = 'false';
+        button.disabled = false;
+        button.textContent = previousLabel;
+        chatWindow.addMessage({
+          id: generateId(),
+          sender: 'agent',
+          text: error.message || 'I could not finalize that booking yet.'
+        });
+      }
+    };
     
     try {
       for await (const state of gen) {
@@ -690,11 +783,23 @@ document.addEventListener('DOMContentLoaded', () => {
           activity.updateStep(currentStepIdx, { icon: '✅', status: 'done' });
         }
 
+        if (state.step === 'approval') {
+          currentStepIdx = null;
+          const prompt = createQuoteApprovalPrompt(state, (button) => {
+            bookApprovedQuote(state, button);
+          });
+          chatWindow.addCustomElement(prompt);
+          saveMessage('assistant', state.message, 'approval').catch(console.error);
+          chatWindow.scrollToBottom();
+          continue;
+        }
+
         let icon = '💬';
         if (state.step === 'contacting-individual') icon = '📞';
         if (state.step === 'responses') icon = '📱';
         if (state.step === 'negotiating') icon = '🤝';
         if (state.step === 'comparing') icon = '📊';
+        if (state.step === 'waiting') icon = '⏳';
 
         if (state.step !== 'booked') {
           currentStepIdx = activity.addStep({ icon, text: state.message, status: 'active' });

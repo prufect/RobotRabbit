@@ -138,6 +138,144 @@ function findSelectedQuote(status, contractor) {
     ?? (quoteMatchesContractor(session?.bestQuote, contractor) ? session.bestQuote : null);
 }
 
+function cleanText(value) {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function quoteReplyText(quote) {
+  return cleanText(quote?.raw_message ?? quote?.reply_body ?? quote?.message ?? '');
+}
+
+function quoteSessionFrom(status) {
+  return status?.session ?? status ?? {};
+}
+
+function sameQuote(left, right) {
+  return Boolean(left && right) && (
+    (left.id && right.id && left.id === right.id)
+    || (left.contractor_id && right.contractor_id && left.contractor_id === right.contractor_id)
+  );
+}
+
+function quoteWithDetails(quote, session) {
+  const quotes = Array.isArray(session?.quotes) ? session.quotes : [];
+  const details = [session?.bestQuote, ...quotes].find(candidate => sameQuote(candidate, quote));
+  return { ...(details ?? {}), ...(quote ?? {}) };
+}
+
+function quoteNeedsHomeownerDecision(quote) {
+  return !quote?.approval_status || quote.approval_status === 'pending';
+}
+
+function firstPendingApproval(session) {
+  const pendingApprovals = Array.isArray(session?.pendingApprovals) ? session.pendingApprovals : [];
+  const quotes = Array.isArray(session?.quotes) ? session.quotes : [];
+  return pendingApprovals.find(quoteNeedsHomeownerDecision)
+    ?? (quoteNeedsHomeownerDecision(session?.bestQuote) ? session.bestQuote : null)
+    ?? quotes.find(quoteNeedsHomeownerDecision)
+    ?? null;
+}
+
+function formatTimeLabel(hour, minute = 0) {
+  const normalizedHour = ((hour % 24) + 24) % 24;
+  const suffix = normalizedHour >= 12 ? 'PM' : 'AM';
+  const displayHour = normalizedHour % 12 || 12;
+  return `${displayHour}:${String(minute).padStart(2, '0')} ${suffix}`;
+}
+
+function timeFromText(text) {
+  const raw = cleanText(text);
+  if (!raw) return null;
+
+  const meridiemMatch = raw.match(/\b(\d{1,2})(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)\b/i);
+  if (meridiemMatch) {
+    let hour = Number(meridiemMatch[1]);
+    const minute = Number(meridiemMatch[2] ?? 0);
+    const meridiem = meridiemMatch[3].toLowerCase();
+    if (hour < 1 || hour > 12) return null;
+    if (meridiem.startsWith('p') && hour !== 12) hour += 12;
+    if (meridiem.startsWith('a') && hour === 12) hour = 0;
+    return formatTimeLabel(hour, minute);
+  }
+
+  const atMatch = raw.match(/\b(?:at|around|by)\s+(\d{1,2})(?::([0-5]\d))?\b/i);
+  if (!atMatch) return null;
+
+  let hour = Number(atMatch[1]);
+  const minute = Number(atMatch[2] ?? 0);
+  if (hour > 23) return null;
+  if (hour >= 1 && hour <= 7) hour += 12;
+  return formatTimeLabel(hour, minute);
+}
+
+function parseQuoteDateTime(quote, fallbackContractor = {}) {
+  const availability = cleanText(quote?.availability ?? fallbackContractor.availability);
+  const reply = quoteReplyText(quote);
+  const combined = cleanText([availability, reply].filter(Boolean).join(' ')).toLowerCase();
+
+  let date = cleanText(quote?.date);
+  if (!date) {
+    if (combined.includes('tomorrow')) date = 'Tomorrow';
+    else if (combined.includes('today')) date = 'Today';
+  }
+
+  const time = cleanText(quote?.time)
+    || timeFromText(availability)
+    || timeFromText(reply)
+    || 'Contractor will confirm';
+
+  return {
+    date: date || 'Today',
+    time,
+  };
+}
+
+function quoteToBooking(quote, fallbackContractor = {}) {
+  const quotedPrice = Number(quote?.price);
+  const negotiatedPrice = Number.isFinite(quotedPrice)
+    ? quotedPrice
+    : asNumber(fallbackContractor.negotiatedPrice, 165);
+  const contractor = normalizeContractor({
+    ...fallbackContractor,
+    id: quote?.contractor_id ?? fallbackContractor.id,
+    name: quote?.contractor_name ?? fallbackContractor.name,
+    phone: quote?.contractor_phone ?? fallbackContractor.phone,
+    originalPrice: asNumber(fallbackContractor.originalPrice, negotiatedPrice + 25),
+    negotiatedPrice,
+    availability: quote?.availability ?? fallbackContractor.availability,
+  });
+  const { date, time } = parseQuoteDateTime(quote, contractor);
+
+  return {
+    contractor,
+    negotiatedPrice,
+    date,
+    time,
+    agentNote: 'Contractor replied through Telegram. Booking is finalized only after homeowner approval.',
+  };
+}
+
+export function buildQuoteApprovalProposal(status, fallbackContractor = {}) {
+  const session = quoteSessionFrom(status);
+  const pendingQuote = firstPendingApproval(session);
+  if (!pendingQuote || pendingQuote.available === false) return null;
+
+  const quote = quoteWithDetails(pendingQuote, session);
+  const contractorName = cleanText(quote.contractor_name ?? fallbackContractor.name) || 'Contractor';
+  const reply = quoteReplyText(quote);
+  const message = reply
+    ? `${contractorName} replied: "${reply}" Should we book?`
+    : `${contractorName} replied. Should we book?`;
+
+  return {
+    quote,
+    quoteId: quote.id ?? null,
+    contractorId: quote.contractor_id ?? fallbackContractor.id ?? null,
+    message,
+    booking: quoteToBooking(quote, fallbackContractor),
+  };
+}
+
 function rowTimestamp(row) {
   return row?.created_at ?? row?.updated_at ?? row?.at ?? new Date().toISOString();
 }
@@ -964,38 +1102,45 @@ export function createRepairApi(options = {}) {
     yield {
       step: 'comparing',
       contractors: [selectedContractor],
-      message: bestQuote ? 'A contractor reply is ready.' : 'No reply yet. Preparing the selected demo offer.',
+      message: bestQuote ? 'A contractor reply is ready.' : 'No reply yet. I will keep watching for their response.',
     };
 
-    const bestContractor = bestQuote
-      ? normalizeContractor({
-        id: bestQuote.contractor_id,
-        name: bestQuote.contractor_name,
-        phone: bestQuote.contractor_phone,
-        originalPrice: Number(bestQuote.price ?? 165) + 25,
-        negotiatedPrice: Number(bestQuote.price ?? 165),
-        availability: bestQuote.availability,
-      })
-      : chooseBestOffer([selectedContractor]);
+    if (!bestQuote) {
+      yield {
+        step: 'waiting',
+        contractors: [selectedContractor],
+        message: `Still waiting for ${selectedContractor.name} to reply. I will update the chat once a quote arrives.`,
+      };
+      return;
+    }
 
-    if (!bestContractor) return;
+    const proposal = buildQuoteApprovalProposal(status, selectedContractor)
+      ?? buildQuoteApprovalProposal({
+        session: {
+          bestQuote,
+          pendingApprovals: [bestQuote],
+          quotes: [bestQuote],
+        },
+      }, selectedContractor);
+
+    if (!proposal) return;
 
     yield {
-      step: 'booked',
-      booking: {
-        contractor: bestContractor,
-        negotiatedPrice: bestContractor.negotiatedPrice,
-        date: bestContractor.availability?.split(',')[0] ?? 'Today',
-        time: bestContractor.availability?.split(',')[1]?.trim() ?? '4:00 PM',
-        agentNote: 'Stored in InsForge. Contractor outreach and status are tied to this repair request.',
-      },
+      step: 'approval',
+      quote: proposal.quote,
+      quoteId: proposal.quoteId,
+      contractorId: proposal.contractorId,
+      booking: proposal.booking,
+      message: proposal.message,
     };
   }
 
-  async function finalizeBooking(contractorId, date, time) {
+  async function finalizeBooking(contractorId, date, time, quoteId = null) {
     if (!isBackendConfigured() || !activeRequestId) return;
+    const body = { requestId: activeRequestId, contractorId, date, time };
+    if (quoteId) body.quoteId = quoteId;
     const response = await insforge.functions.invoke('finalize-booking', {
-      body: { requestId: activeRequestId, contractorId, date, time },
+      body,
     });
     return assertSdkResult(response, 'Booking finalization failed.');
   }

@@ -243,6 +243,94 @@ describe('frontend InsForge integration helper', () => {
     ]);
   });
 
+  it('builds an in-chat booking proposal from a pending contractor quote', async () => {
+    const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
+    const { buildQuoteApprovalProposal } = await import(serviceUrl);
+
+    const proposal = buildQuoteApprovalProposal({
+      session: {
+        requestId: 'request-1',
+        status: 'pending_approval',
+        pendingApprovals: [{
+          id: 'quote-1',
+          contractor_id: 'contractor-1',
+          contractor_name: 'Testing Contractor',
+          raw_message: 'Available today at 4 for $300.',
+          available: true,
+          price: 300,
+          availability: 'today at 4',
+          approval_status: 'pending',
+        }],
+        bestQuote: {
+          id: 'quote-1',
+          contractor_id: 'contractor-1',
+          contractor_name: 'Testing Contractor',
+          raw_message: 'Available today at 4 for $300.',
+          available: true,
+          price: 300,
+          availability: 'today at 4',
+          approval_status: 'pending',
+        },
+      },
+    });
+
+    expect(proposal).toEqual(expect.objectContaining({
+      quoteId: 'quote-1',
+      contractorId: 'contractor-1',
+      message: 'Testing Contractor replied: "Available today at 4 for $300." Should we book?',
+      booking: expect.objectContaining({
+        negotiatedPrice: 300,
+        date: 'Today',
+        time: '4:00 PM',
+      }),
+    }));
+    expect(proposal.booking.contractor).toEqual(expect.objectContaining({
+      id: 'contractor-1',
+      name: 'Testing Contractor',
+    }));
+  });
+
+  it('does not rebuild an approval prompt for an already decided quote', async () => {
+    const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
+    const { buildQuoteApprovalProposal } = await import(serviceUrl);
+
+    const proposal = buildQuoteApprovalProposal({
+      session: {
+        requestId: 'request-1',
+        status: 'booked',
+        bestQuote: {
+          id: 'quote-1',
+          contractor_id: 'contractor-1',
+          contractor_name: 'Testing Contractor',
+          raw_message: 'Available today at 4 for $300.',
+          available: true,
+          price: 300,
+          approval_status: 'approved',
+        },
+        quotes: [{
+          id: 'quote-1',
+          contractor_id: 'contractor-1',
+          contractor_name: 'Testing Contractor',
+          raw_message: 'Available today at 4 for $300.',
+          available: true,
+          price: 300,
+          approval_status: 'approved',
+        }],
+      },
+    });
+
+    expect(proposal).toBeNull();
+  });
+
+  it('renders quote approval as a chat booking action before finalizing', () => {
+    const source = readFileSync('frontend/app.js', 'utf8');
+
+    expect(source).toContain('createQuoteApprovalPrompt');
+    expect(source).toContain('data-action="book-quote"');
+    expect(source).toContain('finalizeBooking(');
+    expect(source).toContain('Should we book?');
+  });
+
   it('direct-uploads storage files and stores normalized metadata before analysis', async () => {
     const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
     const { createRepairApi } = await import(serviceUrl);
@@ -406,7 +494,37 @@ describe('frontend InsForge integration helper', () => {
             status: 'success',
             session: {
               requestId: 'selected-request-1',
-              quotes: [],
+              status: 'pending_approval',
+              bestQuote: {
+                id: 'quote-1',
+                contractor_id: 'test-contractor',
+                contractor_name: 'Testing Contractor',
+                raw_message: 'Available today at 4 for $120.',
+                available: true,
+                price: 120,
+                availability: 'today at 4',
+                approval_status: 'pending',
+              },
+              pendingApprovals: [{
+                id: 'quote-1',
+                contractor_id: 'test-contractor',
+                contractor_name: 'Testing Contractor',
+                raw_message: 'Available today at 4 for $120.',
+                available: true,
+                price: 120,
+                availability: 'today at 4',
+                approval_status: 'pending',
+              }],
+              quotes: [{
+                id: 'quote-1',
+                contractor_id: 'test-contractor',
+                contractor_name: 'Testing Contractor',
+                raw_message: 'Available today at 4 for $120.',
+                available: true,
+                price: 120,
+                availability: 'today at 4',
+                approval_status: 'pending',
+              }],
               notifications: [],
               messages: [],
               jobs: [],
@@ -479,6 +597,11 @@ describe('frontend InsForge integration helper', () => {
     expect(states[0]).toEqual(expect.objectContaining({
       step: 'contacting',
       count: 1,
+    }));
+    expect(states).toContainEqual(expect.objectContaining({
+      step: 'approval',
+      quote: expect.objectContaining({ id: 'quote-1' }),
+      booking: expect.objectContaining({ negotiatedPrice: 120 }),
     }));
   });
 
