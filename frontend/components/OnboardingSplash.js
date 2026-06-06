@@ -14,15 +14,15 @@ export function createOnboardingSplash(container) {
   content.className = 'splash-content';
   content.innerHTML = `
     <h1 class="splash-title">
-      Speak Freely, <span style="color: #8C6AA8;">Capture</span><br>
-      <span style="color: #2F2F2F;">Every Thought.</span>
+      Fix Anything, <span style="color: #8C6AA8;">Find</span><br>
+      <span style="color: #2F2F2F;">The Right Pro.</span>
     </h1>
     <p class="splash-tagline">
-      Record Your Ideas Anytime, Anywhere. Let AI Instantly<br>
-      Turn Your Voice Into Organized Notes
+      Describe Your Issue or Snap a Photo. Let AI Instantly<br>
+      Find & Book Trusted Local Professionals
     </p>
     
-    <button class="btn-primary get-started-btn" id="btn-get-started">Get Stared</button>
+    <button class="btn-primary get-started-btn" id="btn-get-started">Get Started</button>
   `;
   overlay.appendChild(content);
   

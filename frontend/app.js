@@ -115,17 +115,17 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
       <button class="premium-btn">Try premium ✨</button>
     </div>
-    <h2 class="greeting-hero">Good Morning<br>How May I Assist You Today?</h2>
+    <h2 class="greeting-hero">Good Morning<br>What Needs Fixing Today?</h2>
   `;
   dashboard.appendChild(greeting);
   
   const quickActions = document.createElement('div');
   quickActions.className = 'quick-actions-grid';
   const actions = [
-    { title: 'Image<br>Generating', icon: '🖼️', query: 'Generate an image' },
-    { title: 'Creating<br>Image', icon: '📋', query: 'Create an image' },
-    { title: 'Set<br>Reminder', icon: '⏰', query: 'Set a reminder' },
-    { title: 'Translate', icon: '💬', query: 'Translate text' }
+    { title: 'Find a<br>Plumber', icon: '🔧', query: 'I need a plumber' },
+    { title: 'Find an<br>Electrician', icon: '⚡', query: 'I need an electrician' },
+    { title: 'Find a<br>Carpenter', icon: '🪚', query: 'I need a carpenter' },
+    { title: 'Emergency<br>Repair', icon: '🚨', query: 'I have an emergency repair needed' }
   ];
   actions.forEach(act => {
     const card = document.createElement('div');
@@ -149,9 +149,9 @@ document.addEventListener('DOMContentLoaded', () => {
     </div>
     <div class="chat-filters">
       <div class="chat-filter-pill active">All</div>
-      <div class="chat-filter-pill">Reminders</div>
-      <div class="chat-filter-pill">Music</div>
-      <div class="chat-filter-pill">Searches</div>
+      <div class="chat-filter-pill">Plumbing</div>
+      <div class="chat-filter-pill">Electrical</div>
+      <div class="chat-filter-pill">HVAC</div>
     </div>
   `;
   dashboard.appendChild(chatHistory);
