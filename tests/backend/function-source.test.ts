@@ -6,6 +6,8 @@ const functionFiles = [
   'functions/search-contractors.ts',
   'functions/notify-contractors.ts',
   'functions/contractor-reply.ts',
+  'functions/telegram-webhook.ts',
+  'functions/finalize-booking.ts',
   'functions/status.ts',
   'functions/process-agent-jobs.ts',
 ];
@@ -29,5 +31,34 @@ describe('InsForge edge function sources', () => {
       expect(source).toContain('edgeFunctionToken');
       expect(source).toContain('auth.getCurrentUser()');
     }
+  });
+
+  it('routes Telegram replies through the shared quote approval intake', () => {
+    const source = readFileSync('functions/telegram-webhook.ts', 'utf8');
+
+    expect(source).toContain("from './_shared/contractor-replies.ts'");
+    expect(source).toContain('recordContractorReply');
+    expect(source).toContain("source: 'telegram'");
+    expect(source).toContain('reply_received_at');
+    expect(source).toContain('reply_message_id');
+    expect(source).toContain("approvalStatus: 'pending'");
+  });
+
+  it('marks selected contractor quotes as approved when booking is finalized', () => {
+    const source = readFileSync('functions/finalize-booking.ts', 'utf8');
+
+    expect(source).toContain("approval_status: 'approved'");
+    expect(source).toContain('approved_at: now');
+    expect(source).toContain("approval_status: 'rejected'");
+    expect(source).toContain('rejected_at: now');
+    expect(source).toContain("status: 'booked'");
+  });
+
+  it('returns pending approvals from status for frontend polling', () => {
+    const source = readFileSync('functions/status.ts', 'utf8');
+
+    expect(source).toContain('pendingApprovals');
+    expect(source).toContain("approval_status === 'pending'");
+    expect(source).toContain('approvalSummary');
   });
 });

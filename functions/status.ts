@@ -59,6 +59,16 @@ export default async function status(req: Request): Promise<Response> {
     const bestQuote = repairRequest.best_quote_id
       ? quotes.find(quote => quote.id === repairRequest.best_quote_id) ?? chooseBestQuote(quotes)
       : chooseBestQuote(quotes);
+    const pendingApprovals = quotes.filter(quote => quote.approval_status === 'pending');
+    const approvalSummary = quotes.reduce((summary, quote) => {
+      const status = quote.approval_status === 'approved'
+        ? 'approved'
+        : quote.approval_status === 'rejected'
+          ? 'rejected'
+          : 'pending';
+      summary[status] += 1;
+      return summary;
+    }, { pending: 0, approved: 0, rejected: 0 });
 
     return jsonResponse({
       status: 'success',
@@ -78,6 +88,8 @@ export default async function status(req: Request): Promise<Response> {
         quotesReceived: quotes.length,
         quotes,
         bestQuote,
+        pendingApprovals,
+        approvalSummary,
         notifications: notificationData ?? [],
         messages: messageData ?? [],
         jobs: jobData ?? [],

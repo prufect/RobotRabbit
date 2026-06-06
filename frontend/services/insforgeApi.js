@@ -144,7 +144,16 @@ function pushConversationMessage(conversation, message) {
     kind: message.kind,
     body: message.body,
     at: message.at,
+    approvalStatus: message.approvalStatus,
   });
+}
+
+function notificationAddress(notification, contractor) {
+  if (contractor?.phone) return contractor.phone;
+  if (notification.channel === 'telegram' && notification.destination) {
+    return `telegram:${notification.destination}`;
+  }
+  return notification.destination ?? null;
 }
 
 function requestTimelineConversation(session, conversations) {
@@ -178,14 +187,15 @@ export function buildConversationsFromStatus(status, activeContractors = []) {
 
   for (const notification of Array.isArray(session.notifications) ? session.notifications : []) {
     const contractor = contractorsById.get(notification.contractor_id);
+    const address = notificationAddress(notification, contractor);
     const key = conversationKey({
-      phone: contractor?.phone ?? notification.destination,
+      phone: contractor?.phone,
       contractorId: notification.contractor_id,
       name: contractor?.name,
       fallback: `notification-${notification.id}`,
     });
     const conversation = ensureConversation(conversations, key, {
-      phone: contractor?.phone ?? notification.destination ?? key,
+      phone: address ?? key,
       name: contractor?.name ?? notification.destination ?? 'Service Provider',
       requestId: session.requestId,
     });
@@ -194,10 +204,21 @@ export function buildConversationsFromStatus(status, activeContractors = []) {
       id: notification.id,
       direction: 'outbound',
       channel: notification.channel ?? 'insforge',
-      kind: notification.status ?? 'outreach',
+      kind: notification.status === 'replied' ? 'sent' : notification.status ?? 'outreach',
       body: notification.message ?? '',
       at: rowTimestamp(notification),
     });
+
+    if (notification.reply_body) {
+      pushConversationMessage(conversation, {
+        id: `${notification.id}-reply`,
+        direction: 'inbound',
+        channel: notification.channel ?? 'insforge',
+        kind: 'reply',
+        body: notification.reply_body,
+        at: notification.reply_received_at ?? rowTimestamp(notification),
+      });
+    }
   }
 
   for (const quote of Array.isArray(session.quotes) ? session.quotes : []) {
@@ -221,7 +242,13 @@ export function buildConversationsFromStatus(status, activeContractors = []) {
       kind: 'quote',
       body: quote.raw_message ?? `${quote.available === false ? 'Unavailable' : 'Available'}${quote.price ? `, $${quote.price}` : ''}`,
       at: rowTimestamp(quote),
+      approvalStatus: quote.approval_status,
     });
+    conversation.approvalStatus = quote.approval_status ?? conversation.approvalStatus ?? null;
+    conversation.needsApproval = conversation.needsApproval || quote.approval_status === 'pending';
+    if (quote.approval_status === 'pending') {
+      conversation.pendingQuoteId = quote.id;
+    }
   }
 
   if (conversations.size === 0) {
@@ -234,6 +261,8 @@ export function buildConversationsFromStatus(status, activeContractors = []) {
       const last = conversation.messages.at(-1);
       return {
         ...conversation,
+        approvalStatus: conversation.approvalStatus ?? null,
+        needsApproval: Boolean(conversation.needsApproval),
         messageCount: conversation.messages.length,
         lastMessageAt: last?.at ?? null,
         lastMessage: last?.body ?? null,

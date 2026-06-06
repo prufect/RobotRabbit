@@ -5,7 +5,9 @@ export type RepairStatus =
   | 'searching'
   | 'notifying'
   | 'negotiating'
+  | 'pending_approval'
   | 'completed'
+  | 'booked'
   | 'failed';
 
 export type JobType = 'analyze_image' | 'search_contractors' | 'notify_contractors';
@@ -56,9 +58,17 @@ export type Contractor = ContractorInsert & {
 
 export type ContractorQuote = {
   id: string;
+  request_id?: string;
+  contractor_id?: string | null;
+  contractor_name?: string;
+  contractor_phone?: string | null;
   available: boolean;
   price: number | null;
   availability: string | null;
+  raw_message?: string;
+  approval_status?: 'pending' | 'approved' | 'rejected';
+  approved_at?: string | null;
+  rejected_at?: string | null;
 };
 
 export type AgentJob = {
@@ -79,8 +89,11 @@ export type NotificationInsert = {
   contractor_id: string | null;
   channel: 'whatsapp' | 'telegram' | 'mock';
   destination: string | null;
-  status: 'pending' | 'sent' | 'failed' | 'mock_sent';
+  status: 'pending' | 'sent' | 'failed' | 'mock_sent' | 'replied';
   message: string;
   provider_message_id?: string | null;
+  reply_received_at?: string | null;
+  reply_message_id?: string | null;
+  reply_body?: string | null;
   last_error?: string | null;
 };

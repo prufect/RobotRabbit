@@ -6,6 +6,8 @@ const entries = [
   'search-contractors',
   'notify-contractors',
   'contractor-reply',
+  'telegram-webhook',
+  'finalize-booking',
   'status',
   'process-agent-jobs',
 ];

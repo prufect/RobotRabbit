@@ -181,6 +181,67 @@ describe('frontend InsForge integration helper', () => {
     ]);
   });
 
+  it('surfaces Telegram contractor replies as pending homeowner approvals', async () => {
+    const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
+    const { buildConversationsFromStatus } = await import(serviceUrl);
+
+    const conversations = buildConversationsFromStatus({
+      session: {
+        requestId: 'request-1',
+        approvalSummary: { pending: 1, approved: 0, rejected: 0 },
+        notifications: [{
+          id: 'notification-telegram-1',
+          contractor_id: 'contractor-telegram-1',
+          channel: 'telegram',
+          destination: '123456789',
+          status: 'replied',
+          message: '[Demo contractor: Bay Area Climate Pros]\nCan you quote this repair?',
+          reply_body: 'Yes, I can do it today at 4pm for $120.',
+          reply_received_at: '2026-06-06T20:04:00.000Z',
+          reply_message_id: 'tg-42',
+          created_at: '2026-06-06T20:00:00.000Z',
+        }],
+        quotes: [{
+          id: 'quote-telegram-1',
+          contractor_id: 'contractor-telegram-1',
+          contractor_name: 'Bay Area Climate Pros',
+          contractor_phone: null,
+          raw_message: 'Yes, I can do it today at 4pm for $120.',
+          available: true,
+          price: 120,
+          approval_status: 'pending',
+          created_at: '2026-06-06T20:04:00.000Z',
+        }],
+        pendingApprovals: [{
+          id: 'quote-telegram-1',
+          contractor_id: 'contractor-telegram-1',
+          contractor_name: 'Bay Area Climate Pros',
+          raw_message: 'Yes, I can do it today at 4pm for $120.',
+          approval_status: 'pending',
+        }],
+        messages: [],
+      },
+    }, [{
+      id: 'contractor-telegram-1',
+      name: 'Bay Area Climate Pros',
+      phone: null,
+    }]);
+
+    expect(conversations).toEqual([expect.objectContaining({
+      phone: 'telegram:123456789',
+      name: 'Bay Area Climate Pros',
+      requestId: 'request-1',
+      approvalStatus: 'pending',
+      needsApproval: true,
+      lastMessage: 'Yes, I can do it today at 4pm for $120.',
+    })]);
+    expect(conversations[0].messages).toEqual([
+      expect.objectContaining({ channel: 'telegram', direction: 'outbound', kind: 'sent' }),
+      expect.objectContaining({ channel: 'telegram', direction: 'inbound', kind: 'reply', body: 'Yes, I can do it today at 4pm for $120.' }),
+      expect.objectContaining({ channel: 'insforge', direction: 'inbound', kind: 'quote', approvalStatus: 'pending' }),
+    ]);
+  });
+
   it('direct-uploads storage files and stores normalized metadata before analysis', async () => {
     const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
     const { createRepairApi } = await import(serviceUrl);
