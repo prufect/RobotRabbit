@@ -1,9 +1,11 @@
+const logoUrl = new URL('../assets/logo.png', import.meta.url).href;
+
 export function createOnboardingSplash(container) {
   const overlay = document.createElement('div');
   overlay.className = 'onboarding-overlay fade-in';
   overlay.innerHTML = `
     <div class="splash-card glass-solid">
-      <img class="splash-logo" src="assets/logo.png" alt="RobotRabbit">
+      <img class="splash-logo" src="${logoUrl}" alt="RobotRabbit">
       <h1 class="splash-title">RobotRabbit</h1>
       <p class="splash-tagline">Snap. Speak. Fixed.</p>
       <div class="splash-steps">

@@ -1,3 +1,5 @@
+const logoUrl = new URL('../assets/logo.png', import.meta.url).href;
+
 export function createChatBubble(message) {
   // message: { id, sender: 'user'|'agent', text, imageUrl?, type?: 'text'|'typing'|'activity'|'contractor-cards'|'booking' }
   const row = document.createElement('div');
@@ -7,7 +9,7 @@ export function createChatBubble(message) {
   if (message.type === 'typing') {
     row.innerHTML = `
       <div class="chat-bubble-avatar">
-        <img src="assets/logo.png" alt="" style="width:28px;height:28px;border-radius:50%;">
+        <img src="${logoUrl}" alt="">
       </div>
       <div class="chat-bubble agent glass">
         <div class="typing-indicator">
@@ -21,7 +23,7 @@ export function createChatBubble(message) {
   }
   
   const avatarHtml = message.sender === 'agent' 
-    ? `<div class="chat-bubble-avatar"><img src="assets/logo.png" alt="" style="width:28px;height:28px;border-radius:50%;"></div>`
+    ? `<div class="chat-bubble-avatar"><img src="${logoUrl}" alt=""></div>`
     : '';
   
   const imageHtml = message.imageUrl 
