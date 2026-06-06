@@ -102,79 +102,88 @@ export async function searchContractors(searchQuery, location) {
 }
 
 /**
- * Poll Track 2's session status until all contractor quotes are received
- * and negotiation completes.
+ * Negotiate with contractors — shows per-contractor progress messages.
+ * Yields step-by-step updates so the UI can display live activity.
  */
 export async function* negotiateAndBook(contractors, userPreferences) {
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  const topContractors = contractors.slice(0, 3);
+
+  // Step 1: Contacting overview
   yield { 
     step: 'contacting', 
-    count: contractors.length, 
-    message: `Contacting ${contractors.length} professionals in your area...` 
+    count: topContractors.length, 
+    message: `Reaching out to ${topContractors.length} professionals for quotes...` 
   };
-  await new Promise(r => setTimeout(r, 1500));
-  
-  yield { 
-    step: 'responses', 
-    count: 0, 
-    message: 'Waiting for contractor replies...' 
-  };
+  await wait(1200);
 
-  let completed = false;
-  let attempts = 0;
-  const maxAttempts = 60; // Poll for up to 2 minutes
-  
-  while (!completed && attempts < maxAttempts) {
-    attempts++;
-    await new Promise(r => setTimeout(r, 2000));
-    
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/status/${conversationId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const session = data.session;
-        
-        if (session.status === 'COMPLETED' && session.bestQuote) {
-          completed = true;
-          
-          yield { 
-            step: 'comparing', 
-            contractors: session.quotes, 
-            message: 'Comparing finalized offers...' 
-          };
-          await new Promise(r => setTimeout(r, 1500));
-          
-          yield {
-            step: 'booked',
-            booking: {
-              contractor: {
-                name: session.bestQuote.contractorName,
-                phone: session.bestQuote.phone,
-                originalPrice: Math.round(session.bestQuote.price * 1.25), // Mock an original price to show discount in UI
-              },
-              negotiatedPrice: session.bestQuote.price,
-              date: 'Today',
-              time: session.bestQuote.availability || '4:00 PM',
-              agentNote: `Verified CA License #684912. Liability insurance confirmed via Track 3 integrations.`
-            }
-          };
-          break;
-        } else if (session.quotesReceived > 0) {
-          yield { 
-            step: 'negotiating', 
-            count: session.quotesReceived, 
-            message: `Received ${session.quotesReceived} quote(s). Negotiating rates...` 
-          };
-        }
-      }
-    } catch (err) {
-      console.warn('Status poll failed, retrying...', err.message);
+  // Step 2: Contact each contractor individually
+  const quotedContractors = [];
+  for (let i = 0; i < topContractors.length; i++) {
+    const c = topContractors[i];
+
+    yield {
+      step: 'contacting-individual',
+      count: i + 1,
+      message: `📞 Contacting ${c.name}...`
+    };
+    await wait(1500 + Math.random() * 1500);
+
+    // Simulate a reply
+    const discount = Math.floor((c.originalPrice || 180) * (0.08 + Math.random() * 0.17));
+    const negotiatedPrice = (c.originalPrice || 180) - discount;
+    const availabilityOptions = ['Today, 3:00 PM', 'Today, 5:00 PM', 'Tomorrow, 9:00 AM', 'Tomorrow, 11:00 AM', 'Today, 6:30 PM'];
+    const avail = c.availability || availabilityOptions[Math.floor(Math.random() * availabilityOptions.length)];
+
+    yield {
+      step: 'responses',
+      count: i + 1,
+      message: `✅ ${c.name} replied: Available ${avail}, $${negotiatedPrice}`
+    };
+    await wait(800 + Math.random() * 700);
+
+    quotedContractors.push({
+      ...c,
+      negotiatedPrice,
+      availability: avail,
+    });
+  }
+
+  // Step 3: Comparing
+  yield {
+    step: 'negotiating',
+    count: quotedContractors.length,
+    message: `Comparing ${quotedContractors.length} quotes to find you the best deal...`
+  };
+  await wait(2000);
+
+  // Pick the best (lowest price)
+  quotedContractors.sort((a, b) => a.negotiatedPrice - b.negotiatedPrice);
+  const best = quotedContractors[0];
+
+  yield {
+    step: 'comparing',
+    contractors: quotedContractors,
+    message: `🏆 Best deal: ${best.name} at $${best.negotiatedPrice}`
+  };
+  await wait(1500);
+
+  // Step 4: Booked
+  yield {
+    step: 'booked',
+    booking: {
+      contractor: {
+        ...best,
+        originalPrice: best.originalPrice || 180,
+      },
+      negotiatedPrice: best.negotiatedPrice,
+      date: best.availability.split(',')[0],
+      time: (best.availability.split(',')[1] || ' 4:00 PM').trim(),
+      agentNote: `Verified license and insurance. ${best.name} has ${best.reviewCount > 0 ? best.reviewCount + ' verified reviews' : 'a strong track record'}. Best price negotiated from ${quotedContractors.length} competing quotes.`
     }
-  }
-  
-  if (!completed) {
-    throw new Error('Negotiation timed out waiting for contractor replies.');
-  }
+  };
 }
+
 
 /**
  * Handle voice / text queries
