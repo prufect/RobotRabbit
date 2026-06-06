@@ -49,14 +49,10 @@ describe('frontend InsForge integration helper', () => {
     expect(appSource).toContain('required: true');
   });
 
-  it('falls back to direct storage upload when the presigned S3 POST is rejected', async () => {
+  it('direct-uploads storage files and stores normalized metadata before analysis', async () => {
     const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
     const { createRepairApi } = await import(serviceUrl);
-    const presignedError = Object.assign(new Error('Upload to storage failed: Bad Request'), {
-      statusCode: 400,
-      error: 'STORAGE_ERROR',
-    });
-    const sdkUpload = vi.fn().mockResolvedValue({ data: null, error: presignedError });
+    const sdkUpload = vi.fn().mockResolvedValue({ data: { key: 'should-not-use-sdk' }, error: null });
     const directUpload = vi.fn().mockResolvedValue({
       bucket: 'repair-photos',
       key: 'users/user-1/requests/request-1/photo.jpg',
@@ -104,7 +100,7 @@ describe('frontend InsForge integration helper', () => {
 
     const result = await api.analyzeImage('blob:preview', 'medium', new File(['abc'], 'photo.jpg', { type: 'image/jpeg' }));
 
-    expect(sdkUpload).toHaveBeenCalledWith('users/user-1/requests/request-1/photo.jpg', expect.any(File));
+    expect(sdkUpload).not.toHaveBeenCalled();
     expect(directUpload).toHaveBeenCalledWith(
       'PUT',
       '/api/storage/buckets/repair-photos/objects/users%2Fuser-1%2Frequests%2Frequest-1%2Fphoto.jpg',
@@ -116,5 +112,75 @@ describe('frontend InsForge integration helper', () => {
     })]);
     expect(invoke).toHaveBeenCalledWith('analyze', { body: { requestId: 'request-1' } });
     expect(result.imageKey).toBe('users/user-1/requests/request-1/photo.jpg');
+  });
+
+  it('optimizes camera PNGs and direct-uploads without hitting the presigned S3 path', async () => {
+    const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
+    const { createRepairApi } = await import(serviceUrl);
+    const originalFile = new File(['original png bytes'], 'photo.png', { type: 'image/png' });
+    const optimizedFile = new File(['compressed jpg'], 'photo.jpg', { type: 'image/jpeg' });
+    const preparePhotoForUpload = vi.fn().mockResolvedValue(optimizedFile);
+    const sdkUpload = vi.fn().mockResolvedValue({ data: { key: 'should-not-use-sdk' }, error: null });
+    const directUpload = vi.fn().mockResolvedValue({
+      bucket: 'repair-photos',
+      key: 'users/user-1/requests/request-2/photo.jpg',
+      size: optimizedFile.size,
+      mimeType: optimizedFile.type,
+      uploadedAt: '2026-06-06T20:10:00.000Z',
+      url: '/api/storage/buckets/repair-photos/objects/users%2Fuser-1%2Frequests%2Frequest-2%2Fphoto.jpg',
+    });
+    const insertSelect = vi.fn().mockResolvedValue({ data: [{ id: 'request-2' }], error: null });
+    const insert = vi.fn().mockReturnValue({ select: insertSelect });
+
+    const api = createRepairApi({
+      config: {
+        baseUrl: 'https://pzv974n7.us-east.insforge.app',
+        anonKey: 'anon',
+        useMock: false,
+        locationText: 'San Francisco, CA',
+      },
+      cryptoImpl: { randomUUID: () => 'request-2' },
+      preparePhotoForUpload,
+      insforge: {
+        auth: {
+          getCurrentUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null }),
+        },
+        storage: {
+          from: vi.fn().mockReturnValue({ upload: sdkUpload }),
+        },
+        getHttpClient: vi.fn().mockReturnValue({ request: directUpload }),
+        database: {
+          from: vi.fn().mockReturnValue({ insert }),
+        },
+        functions: {
+          invoke: vi.fn().mockResolvedValue({
+            data: {
+              isIdentified: true,
+              category: 'hvac',
+              brand: 'Carrier',
+              modelNumber: 'Infinity 26',
+              messageToUser: 'Identified.',
+              contractorSearchQuery: 'Carrier HVAC repair',
+            },
+            error: null,
+          }),
+        },
+      },
+    });
+
+    const result = await api.analyzeImage('blob:preview', 'medium', originalFile);
+
+    expect(preparePhotoForUpload).toHaveBeenCalledWith(originalFile);
+    expect(sdkUpload).not.toHaveBeenCalled();
+    expect(directUpload).toHaveBeenCalledWith(
+      'PUT',
+      '/api/storage/buckets/repair-photos/objects/users%2Fuser-1%2Frequests%2Frequest-2%2Fphoto.jpg',
+      expect.objectContaining({ body: expect.any(FormData), headers: {} }),
+    );
+    expect(insert).toHaveBeenCalledWith([expect.objectContaining({
+      image_key: 'users/user-1/requests/request-2/photo.jpg',
+      image_url: 'https://pzv974n7.us-east.insforge.app/api/storage/buckets/repair-photos/objects/users%2Fuser-1%2Frequests%2Frequest-2%2Fphoto.jpg',
+    })]);
+    expect(result.imageKey).toBe('users/user-1/requests/request-2/photo.jpg');
   });
 });

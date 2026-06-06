@@ -5,6 +5,9 @@ import * as realApi from './realApi.js';
 const DEFAULT_LOCATION = 'San Francisco, CA';
 const DEFAULT_BASE_URL = 'https://pzv974n7.us-east.insforge.app';
 const REPAIR_PHOTO_BUCKET = 'repair-photos';
+const MAX_REPAIR_PHOTO_BYTES = 4 * 1024 * 1024;
+const REPAIR_PHOTO_MAX_DIMENSION = 1600;
+const REPAIR_PHOTO_QUALITY_STEPS = [0.82, 0.72, 0.62, 0.52];
 
 export class AuthRequiredError extends Error {
   constructor(message = 'Sign in to connect this repair request to your InsForge backend.') {
@@ -108,10 +111,101 @@ function assertSdkResult(result, fallbackMessage) {
   return result.data;
 }
 
-function isPresignedStorageUploadError(error) {
-  return error?.statusCode === 400
-    && error?.error === 'STORAGE_ERROR'
-    && /upload to storage failed|presigned/i.test(error.message ?? '');
+function fileNameWithExtension(file, extension) {
+  const name = file?.name || 'photo';
+  const base = name.includes('.') ? name.slice(0, name.lastIndexOf('.')) : name;
+  return `${base || 'photo'}.${extension}`;
+}
+
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return 'unknown size';
+  const megabytes = bytes / (1024 * 1024);
+  return `${megabytes.toFixed(megabytes >= 10 ? 0 : 1)} MB`;
+}
+
+function shouldOptimizePhoto(file) {
+  return Boolean(file?.type?.startsWith('image/'))
+    && (file.size > MAX_REPAIR_PHOTO_BYTES || file.type === 'image/png');
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve) => {
+    canvas.toBlob(resolve, type, quality);
+  });
+}
+
+async function decodePhoto(file) {
+  if (typeof globalThis.createImageBitmap === 'function') {
+    const bitmap = await globalThis.createImageBitmap(file);
+    return {
+      image: bitmap,
+      width: bitmap.width,
+      height: bitmap.height,
+      cleanup: () => bitmap.close?.(),
+    };
+  }
+
+  if (typeof globalThis.Image !== 'function' || !globalThis.URL?.createObjectURL) {
+    return null;
+  }
+
+  const url = globalThis.URL.createObjectURL(file);
+  const image = new globalThis.Image();
+  image.decoding = 'async';
+
+  await new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = () => reject(new Error('Could not decode selected photo.'));
+    image.src = url;
+  });
+
+  return {
+    image,
+    width: image.naturalWidth || image.width,
+    height: image.naturalHeight || image.height,
+    cleanup: () => globalThis.URL.revokeObjectURL(url),
+  };
+}
+
+export async function prepareRepairPhotoForUpload(file) {
+  if (!shouldOptimizePhoto(file) || !globalThis.document?.createElement) {
+    return file;
+  }
+
+  let decoded = null;
+  try {
+    decoded = await decodePhoto(file);
+    if (!decoded?.width || !decoded?.height) return file;
+
+    const scale = Math.min(1, REPAIR_PHOTO_MAX_DIMENSION / Math.max(decoded.width, decoded.height));
+    const canvas = globalThis.document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(decoded.width * scale));
+    canvas.height = Math.max(1, Math.round(decoded.height * scale));
+
+    const context = canvas.getContext('2d');
+    if (!context) return file;
+
+    context.fillStyle = '#fff';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(decoded.image, 0, 0, canvas.width, canvas.height);
+
+    for (const quality of REPAIR_PHOTO_QUALITY_STEPS) {
+      const blob = await canvasToBlob(canvas, 'image/jpeg', quality);
+      if (!blob) continue;
+      if (blob.size <= MAX_REPAIR_PHOTO_BYTES || quality === REPAIR_PHOTO_QUALITY_STEPS.at(-1)) {
+        return new File([blob], fileNameWithExtension(file, 'jpg'), {
+          type: 'image/jpeg',
+          lastModified: file.lastModified ?? Date.now(),
+        });
+      }
+    }
+  } catch {
+    return file;
+  } finally {
+    decoded?.cleanup?.();
+  }
+
+  return file;
 }
 
 function storageObjectUrl(baseUrl, bucketName, key) {
@@ -160,24 +254,30 @@ async function uploadDirectlyThroughInsForge(insforge, config, key, file) {
   });
 }
 
-async function uploadRepairPhoto(insforge, config, key, file) {
-  const upload = await insforge.storage
-    .from(REPAIR_PHOTO_BUCKET)
-    .upload(key, file);
+function normalizeDirectUploadError(error, file) {
+  const message = error instanceof Error ? error.message : String(error);
+  const statusCode = error?.statusCode;
+  const normalized = statusCode === 413 || /413|content too large|payload too large/i.test(message)
+    ? new Error(`Photo upload is still too large (${formatBytes(file.size)}). Try a smaller photo or crop it before uploading.`)
+    : new Error(message || 'Photo upload failed.');
 
-  if (!upload?.error) return upload;
-  if (!isPresignedStorageUploadError(upload.error)) return upload;
+  normalized.code = statusCode === 413 ? 'STORAGE_UPLOAD_TOO_LARGE' : 'STORAGE_UPLOAD_FAILED';
+  normalized.cause = error;
+  return normalized;
+}
+
+async function uploadRepairPhoto(insforge, config, key, file) {
+  if (!insforge.getHttpClient?.()?.request) {
+    return insforge.storage
+      .from(REPAIR_PHOTO_BUCKET)
+      .upload(key, file);
+  }
 
   try {
     const data = await uploadDirectlyThroughInsForge(insforge, config, key, file);
     return { data, error: null };
-  } catch (fallbackError) {
-    const primaryMessage = upload.error.message || 'Presigned upload failed';
-    const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
-    const error = new Error(`${primaryMessage}. Direct upload fallback also failed: ${fallbackMessage}`);
-    error.code = 'STORAGE_UPLOAD_FAILED';
-    error.cause = fallbackError;
-    return { data: null, error };
+  } catch (error) {
+    return { data: null, error: normalizeDirectUploadError(error, file) };
   }
 }
 
@@ -188,6 +288,7 @@ export function createRepairApi(options = {}) {
   };
   const cryptoImpl = options.cryptoImpl ?? globalThis.crypto;
   const fallbackApi = options.fallbackApi ?? (config.useMock ? mockApi : realApi);
+  const preparePhotoForUpload = options.preparePhotoForUpload ?? prepareRepairPhotoForUpload;
   const injectedClient = Boolean(options.insforge);
   const insforge = options.insforge
     ?? (config.anonKey && !config.useMock ? createClient({ baseUrl: config.baseUrl, anonKey: config.anonKey }) : null);
@@ -260,8 +361,9 @@ export function createRepairApi(options = {}) {
 
     const user = await requireCurrentUser();
     const requestId = cryptoImpl.randomUUID();
-    const imageKey = `users/${user.id}/requests/${requestId}/photo.${extensionFrom(file)}`;
-    const upload = await uploadRepairPhoto(insforge, config, imageKey, file);
+    const uploadFile = await preparePhotoForUpload(file);
+    const imageKey = `users/${user.id}/requests/${requestId}/photo.${extensionFrom(uploadFile)}`;
+    const upload = await uploadRepairPhoto(insforge, config, imageKey, uploadFile);
 
     assertSdkResult(upload, 'Photo upload did not return storage metadata.');
 
