@@ -11,7 +11,6 @@ import { analyzeImage } from '../services/gemini.js';
 import * as state from '../services/stateManager.js';
 import { validateAnalyzeRequest } from '../utils/validation.js';
 import { ValidationError, GeminiError } from '../utils/errors.js';
-import { MOCK_CONTRACTORS } from '../mocks/contractors.js';
 
 /**
  * Call Track 3's POST /api/search-contractors.
@@ -20,33 +19,27 @@ import { MOCK_CONTRACTORS } from '../mocks/contractors.js';
  * @param {string} searchQuery
  * @returns {Promise<object[]>} Array of contractor objects.
  */
-async function searchContractors(searchQuery) {
+async function searchContractors(searchQuery, location) {
   const url = `${config.TRACK3_BASE_URL}/api/search-contractors`;
 
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        searchQuery,
-        location: 'San Francisco, CA',
-        limit: config.MIN_QUOTES_REQUIRED,
-      }),
-      signal: AbortSignal.timeout(10_000),
-    });
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      searchQuery,
+      location: location || 'San Francisco, CA',
+      limit: config.MIN_QUOTES_REQUIRED,
+    }),
+    signal: AbortSignal.timeout(10_000),
+  });
 
-    if (!res.ok) throw new Error(`Track 3 returned HTTP ${res.status}`);
-    const data = await res.json();
-    return data.results ?? [];
-  } catch (err) {
-    console.warn(JSON.stringify({
-      level: 'warn',
-      timestamp: new Date().toISOString(),
-      message: 'Track 3 /api/search-contractors unreachable — using mock data.',
-      error: err.message,
-    }));
-    return MOCK_CONTRACTORS;
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Contractor search failed (HTTP ${res.status}): ${body}`);
   }
+
+  const data = await res.json();
+  return data.results ?? [];
 }
 
 /**
@@ -120,7 +113,7 @@ export async function analyzeHandler(req, res, next) {
       });
 
       // ── Search for contractors via Track 3 ─────────────────────────────────
-      const contractors = await searchContractors(analysis.contractorSearchQuery);
+      const contractors = await searchContractors(analysis.contractorSearchQuery, req.body.location);
 
       state.updateSession(conversationId, {
         status: 'NEGOTIATING',
