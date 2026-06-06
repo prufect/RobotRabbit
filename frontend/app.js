@@ -585,7 +585,6 @@ document.addEventListener('DOMContentLoaded', () => {
     btnContainer.innerHTML = `<button class="btn-primary fade-in" style="margin-top: 8px;">🤖 Negotiate with top 3</button>`;
     chatWindow.addCustomElement(btnContainer);
     
-    const startNegotiation = async (btn) => {
     let negotiationStarted = false;
     const startNegotiation = async (btn, specificContractor = null) => {
       if (negotiationStarted) return;
@@ -593,7 +592,8 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.disabled = true;
       btn.innerHTML = 'Negotiating...';
       btn.style.opacity = '0.7';
-      await startNegotiationFlow(contractors, urgency);
+      const contractorsToNegotiate = specificContractor ? [specificContractor] : contractors;
+      await startNegotiationFlow(contractorsToNegotiate, urgency);
     };
 
     btnContainer.querySelector('button').addEventListener('click', (e) => startNegotiation(e.target));
@@ -601,7 +601,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cardsContainer.addEventListener('contractor-selected', (e) => {
       showContractorDetailModal(e.detail.contractor, () => {
         const btn = btnContainer.querySelector('button');
-        startNegotiation(btn);
+        startNegotiation(btn, e.detail.contractor);
       });
     });
 

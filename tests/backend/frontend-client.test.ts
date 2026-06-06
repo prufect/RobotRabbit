@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -41,6 +42,10 @@ describe('frontend InsForge integration helper', () => {
 
     expect(source).toContain("./services/insforgeApi.js");
     expect(source).not.toContain("./services/mockApi.js");
+  });
+
+  it('keeps the deployed frontend entrypoint syntactically valid', () => {
+    expect(() => execFileSync(process.execPath, ['--check', 'frontend/app.js'])).not.toThrow();
   });
 
   it('auto-starts contractor outreach after presenting the top matches', () => {
