@@ -55,7 +55,8 @@ function normalizeContractor(contractor, index = 0) {
 }
 
 /**
- * Send the image URL to Track 2's /api/analyze endpoint
+ * Send the image to Track 2's /api/analyze endpoint.
+ * imageUrl can be a data:image/... URL from the camera or an https:// URL.
  */
 export async function analyzeImage(imageUrl, urgency) {
   const response = await fetch(`${BACKEND_URL}/api/analyze`, {

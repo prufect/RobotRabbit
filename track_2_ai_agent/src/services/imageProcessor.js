@@ -16,6 +16,35 @@ import { ImageProcessingError } from '../utils/errors.js';
  * @throws {ImageProcessingError} on fetch failure, invalid type, or oversize payload.
  */
 export async function fetchAndProcessImage(imageUrl) {
+  // ── Handle data URLs (from camera capture) ──────────────────────────────────
+  if (imageUrl.startsWith('data:')) {
+    const match = imageUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (!match) {
+      throw new ImageProcessingError('Invalid data URL format.', { imageUrl: imageUrl.substring(0, 50) });
+    }
+    const mimeType = match[1].toLowerCase();
+    const base64 = match[2];
+
+    if (!config.ALLOWED_MIME_TYPES.includes(mimeType)) {
+      throw new ImageProcessingError(
+        `Unsupported image type "${mimeType}". Accepted: ${config.ALLOWED_MIME_TYPES.join(', ')}`,
+        { mimeType },
+      );
+    }
+
+    const sizeBytes = Math.ceil(base64.length * 3 / 4);
+    if (sizeBytes > config.MAX_IMAGE_SIZE_BYTES) {
+      const sizeMB = (sizeBytes / (1024 * 1024)).toFixed(1);
+      throw new ImageProcessingError(
+        `Image is ${sizeMB} MB — exceeds the ${config.MAX_IMAGE_SIZE_BYTES / (1024 * 1024)} MB limit.`,
+        { sizeBytes },
+      );
+    }
+
+    return { base64, mimeType };
+  }
+
+  // ── Handle HTTP(S) URLs ─────────────────────────────────────────────────────
   let response;
 
   try {
