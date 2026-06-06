@@ -110,16 +110,24 @@ document.addEventListener('DOMContentLoaded', () => {
   greeting.className = 'greeting-section';
   greeting.innerHTML = `
     <div class="greeting-top">
-      <img src="${logoUrl}" alt="User" class="greeting-avatar" style="background:#fff;">
       <div class="greeting-text">
         <span class="greeting-name">Hello Alex</span>
         <span class="greeting-welcome">Welcome Back</span>
       </div>
-      <button class="premium-btn">Try premium ✨</button>
+      <button class="messages-btn" id="dashboard-messages-btn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+        Messages
+      </button>
     </div>
     <h2 class="greeting-hero">Good Morning<br>What Needs Fixing Today?</h2>
   `;
   dashboard.appendChild(greeting);
+
+  // Wire dashboard Messages button to open the message center
+  greeting.querySelector('#dashboard-messages-btn').addEventListener('click', () => {
+    const mcToggle = header.querySelector('.mc-toggle');
+    if (mcToggle) mcToggle.click();
+  });
   
   const quickActions = document.createElement('div');
   quickActions.className = 'quick-actions-grid';
@@ -511,6 +519,14 @@ document.addEventListener('DOMContentLoaded', () => {
   
   async function processUserInput(text, imageUrl = null, imageFile = null, isVoice = false) {
     if (!requireSignedIn()) return;
+
+    // Hide the dashboard when a chat starts
+    if (dashboard && dashboard.parentNode) {
+      dashboard.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+      dashboard.style.opacity = '0';
+      dashboard.style.transform = 'translateY(-10px)';
+      setTimeout(() => { dashboard.style.display = 'none'; }, 300);
+    }
 
     lastInputMode = isVoice ? 'voice' : 'text';
     const id = generateId();
