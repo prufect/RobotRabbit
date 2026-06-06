@@ -31,6 +31,7 @@ export type RepairRequest = {
 
 export type NormalizedAnalysis = {
   isIdentified: boolean;
+  confidenceScore: number;
   status: 'identified' | 'needs_info';
   category: string;
   brand: string | null;
@@ -38,6 +39,7 @@ export type NormalizedAnalysis = {
   diagnosis: string | null;
   nextQuestion: string | null;
   messageToUser: string;
+  clarifyingQuestion: string | null;
   contractorSearchQuery: string | null;
 };
 

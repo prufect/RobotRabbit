@@ -19,15 +19,18 @@ export function createChatBubble(message) {
         </div>
       </div>
     `;
-    return { el: row };
+    return { el: row, imageContainer: null };
   }
   
   const avatarHtml = message.sender === 'agent' 
     ? `<div class="chat-bubble-avatar"><img src="${logoUrl}" alt=""></div>`
     : '';
   
+  // Wrap uploaded images in a scan-target container for the overlay
   const imageHtml = message.imageUrl 
-    ? `<img src="${message.imageUrl}" alt="Uploaded photo" style="max-width:100%;border-radius:12px;margin-bottom:8px;">` 
+    ? `<div class="image-scan-target" data-scan-target="true">
+        <img src="${message.imageUrl}" alt="Uploaded photo" style="max-width:100%;border-radius:12px;display:block;">
+      </div>` 
     : '';
   
   const bubbleClass = message.sender === 'user' ? 'chat-bubble user' : 'chat-bubble agent glass';
@@ -43,5 +46,7 @@ export function createChatBubble(message) {
     </div>
   `;
   
-  return { el: row };
+  // Return reference to the image container for overlay attachment
+  const imageContainer = row.querySelector('.image-scan-target');
+  return { el: row, imageContainer };
 }

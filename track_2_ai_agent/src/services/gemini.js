@@ -100,9 +100,10 @@ async function withRetry(fn, maxRetries = config.GEMINI_MAX_RETRIES) {
  * Analyze an image of a home appliance using Gemini Vision.
  *
  * @param {string} imageUrl — Publicly-accessible image URL.
+ * @param {string} [userContext] — Optional additional context from the user.
  * @returns {Promise<object>} Structured analysis result matching the API contract.
  */
-export async function analyzeImage(imageUrl) {
+export async function analyzeImage(imageUrl, userContext) {
   // Fetch and encode the image
   const { base64, mimeType } = await fetchAndProcessImage(imageUrl);
 
@@ -115,7 +116,9 @@ export async function analyzeImage(imageUrl) {
           role: 'user',
           parts: [
             { inlineData: { mimeType, data: base64 } },
-            { text: 'Analyze this photo. What home service or repair does the user need? Identify the issue category, and if a specific appliance is visible, identify the brand and model. Look carefully at the actual content of the image — do not assume it is an HVAC unit. Return the result as JSON.' },
+            { text: userContext 
+              ? `Analyze this photo. What home service or repair does the user need? Identify the issue category, and if a specific appliance is visible, identify the brand and model. Look carefully at the actual content of the image — do not assume it is an HVAC unit. Return your confidence score (0-100) — only return 100 if you are absolutely certain. Return the result as JSON.\n\nThe user also provided this additional context: "${userContext}"`
+              : 'Analyze this photo. What home service or repair does the user need? Identify the issue category, and if a specific appliance is visible, identify the brand and model. Look carefully at the actual content of the image — do not assume it is an HVAC unit. Return your confidence score (0-100) — only return 100 if you are absolutely certain. Return the result as JSON.' },
           ],
         },
       ],

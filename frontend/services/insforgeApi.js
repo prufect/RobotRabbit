@@ -666,12 +666,26 @@ export function createRepairApi(options = {}) {
     }]);
   }
 
-  async function analyzeImage(previewUrl, urgency = 'medium', file = null) {
+  async function analyzeImage(previewUrl, urgency = 'medium', file = null, userContext = null) {
     if (!isBackendConfigured() || !file) {
-      return fallbackApi.analyzeImage(previewUrl, urgency);
+      return fallbackApi.analyzeImage(previewUrl, urgency, userContext);
     }
 
     const user = await requireCurrentUser();
+
+    // If we already have an active request and userContext is provided,
+    // this is a re-analysis with clarification — don't re-upload the photo
+    if (userContext && activeRequestId) {
+      const analysis = await insforge.functions.invoke('analyze', {
+        body: { requestId: activeRequestId, userContext },
+      });
+
+      return {
+        ...assertSdkResult(analysis, 'Analyze function did not return a response.'),
+        requestId: activeRequestId,
+      };
+    }
+
     const requestId = cryptoImpl.randomUUID();
     const uploadFile = await preparePhotoForUpload(file);
     const imageKey = `users/${user.id}/requests/${requestId}/photo.${extensionFrom(uploadFile)}`;
