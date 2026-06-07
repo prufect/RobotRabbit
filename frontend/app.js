@@ -320,48 +320,10 @@ document.addEventListener('DOMContentLoaded', () => {
   `;
   
   const defaultBigMic = voiceFirstRow.querySelector('#default-big-mic');
-  const defaultMicStatus = voiceFirstRow.querySelector('#default-mic-status');
   const voiceToKeyboardBtn = voiceFirstRow.querySelector('#voice-to-keyboard-btn');
   
-  const defaultVoiceService = createVoiceService();
-  
-  defaultVoiceService.on('start', () => {
-    defaultBigMic.style.transform = 'scale(1.15)';
-    defaultBigMic.style.boxShadow = '0 0 40px rgba(155, 89, 182, 0.6)';
-    defaultMicStatus.textContent = 'Listening...';
-  });
-  
-  defaultVoiceService.on('end', () => {
-    defaultBigMic.style.transform = 'scale(1)';
-    defaultBigMic.style.boxShadow = '0 10px 30px rgba(155, 89, 182, 0.3)';
-    defaultMicStatus.textContent = 'Tap to speak';
-  });
-  
-  defaultVoiceService.on('interim', (text) => {
-    defaultMicStatus.textContent = text || 'Listening...';
-  });
-  
-  defaultVoiceService.on('result', (text) => {
-    defaultMicStatus.textContent = 'Processing...';
-    processUserInput(text, null, null, true);
-    setTimeout(() => { defaultMicStatus.textContent = 'Tap to speak'; }, 1000);
-  });
-  
-  defaultVoiceService.on('error', (err) => {
-    defaultMicStatus.textContent = err === 'not-allowed' ? 'Mic denied' : 'Try again';
-    setTimeout(() => { defaultMicStatus.textContent = 'Tap to speak'; }, 3000);
-  });
-  
   defaultBigMic.addEventListener('click', () => {
-    if (!defaultVoiceService.isSupported()) {
-      alert('Voice not supported — try typing');
-      return;
-    }
-    if (defaultVoiceService.getIsListening()) {
-      defaultVoiceService.stop();
-    } else {
-      defaultVoiceService.start();
-    }
+    voiceOrb.showFullscreen(true);
   });
   
   voiceToKeyboardBtn.addEventListener('click', () => {

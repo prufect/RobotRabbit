@@ -69,8 +69,11 @@ export function createVoiceOrb(container) {
     fullscreenOverlay.classList.add('hidden');
     if (isListening) voiceService.stop();
   };
-  const showFullscreen = () => {
+  const showFullscreen = (autoStart = false) => {
     fullscreenOverlay.classList.remove('hidden');
+    if (autoStart && !isListening && voiceService.isSupported()) {
+      voiceService.start();
+    }
   };
   backBtn.addEventListener('click', closeFullscreen);
   fullscreenOverlay.querySelector('.voice-keyboard-btn').addEventListener('click', () => {
@@ -148,6 +151,11 @@ export function createVoiceOrb(container) {
   });
   
   bigMicBtn.addEventListener('click', () => {
+    if (isListening) voiceService.stop();
+    else voiceService.start();
+  });
+  
+  bigOrb.addEventListener('click', () => {
     if (isListening) voiceService.stop();
     else voiceService.start();
   });
