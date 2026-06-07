@@ -20,6 +20,7 @@ import {
   negotiateAndBook,
   finalizeBooking,
   negotiateQuote,
+  waitForQuoteUpdate,
   getConversations,
   getConversationMessages,
   getBookings,
@@ -1052,6 +1053,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const gen = negotiateAndBook(contractors, { urgency });
     let currentStepIdx = null;
+    const renderedApprovalKeys = new Set();
 
     const bookApprovedQuote = async (proposal, button) => {
       if (button.dataset.busy === 'true') return;
@@ -1135,6 +1137,15 @@ document.addEventListener('DOMContentLoaded', () => {
         saveMessage('assistant', sentMsg, 'notification').catch(console.error);
         button.textContent = 'Asked';
         messageCenter.refresh();
+        waitForQuoteUpdate(proposal.quote, contractor, {
+          targetPrice,
+          replyPollAttempts: 12,
+          replyPollIntervalMs: 2500,
+        }).then((updatedProposal) => {
+          if (!updatedProposal) return;
+          renderApprovalPrompt(updatedProposal);
+          messageCenter.refresh();
+        }).catch(console.error);
       } catch (error) {
         button.dataset.busy = 'false';
         button.disabled = false;
@@ -1167,6 +1178,16 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const renderApprovalPrompt = (proposal) => {
+      const quote = proposal?.quote ?? {};
+      const approvalKey = [
+        proposal?.quoteId ?? proposal?.contractorId ?? quote.contractor_id ?? 'quote',
+        quote.raw_message ?? '',
+        quote.price ?? '',
+        quote.updated_at ?? '',
+      ].join('|');
+      if (renderedApprovalKeys.has(approvalKey)) return;
+      renderedApprovalKeys.add(approvalKey);
+
       const prompt = createQuoteApprovalPrompt(proposal, {
         onBook: (button) => bookApprovedQuote(proposal, button),
         onNegotiate: (button) => negotiateApprovedQuote(proposal, button),

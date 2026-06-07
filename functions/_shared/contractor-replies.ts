@@ -14,6 +14,8 @@ export type RecordContractorReplyInput = {
   notificationId?: string | null;
   providerMessageId?: string | number | null;
   approvalStatus?: ApprovalStatus;
+  quoteId?: string | null;
+  targetPrice?: number | null;
 };
 
 export type ContractorReplyResult = {
@@ -86,6 +88,16 @@ async function findExistingQuote(
   contractor: Contractor | null,
   input: RecordContractorReplyInput,
 ): Promise<(ContractorQuote & Record<string, unknown>) | null> {
+  if (input.quoteId) {
+    const { data } = await client.database
+      .from('contractor_quotes')
+      .select('*')
+      .eq('request_id', repairRequest.id)
+      .eq('id', input.quoteId)
+      .maybeSingle();
+    if (data) return data as ContractorQuote & Record<string, unknown>;
+  }
+
   if (contractor?.id) {
     const { data } = await client.database
       .from('contractor_quotes')
@@ -109,6 +121,17 @@ async function findExistingQuote(
   return null;
 }
 
+function numberOrNull(value: unknown): number | null {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function isAffirmativeReply(messageBody: string): boolean {
+  const lower = messageBody.toLowerCase();
+  if (/\b(no|nope|can't|cannot|not|unavailable|booked)\b/.test(lower)) return false;
+  return /\b(yes|yeah|yep|ok|okay|sure|deal|works|accepted|agree|can do|i can)\b/.test(lower);
+}
+
 export async function recordContractorReply(
   client: DatabaseClient,
   input: RecordContractorReplyInput,
@@ -127,8 +150,15 @@ export async function recordContractorReply(
   const contractor = await findContractor(client, input)
     ?? await createContractor(client, input, repairRequest);
   const parsed = parseContractorReply(input.messageBody);
+  const existingQuote = await findExistingQuote(client, repairRequest, contractor, input);
   const receivedAt = new Date().toISOString();
   const approvalStatus = input.approvalStatus ?? 'pending';
+  const targetPrice = numberOrNull(input.targetPrice);
+  const counterOfferAccepted = targetPrice !== null
+    && parsed.available !== false
+    && (parsed.price !== null || isAffirmativeReply(input.messageBody));
+  const replyPrice = parsed.price ?? (counterOfferAccepted ? targetPrice : null) ?? existingQuote?.price ?? null;
+  const replyAvailability = parsed.availability ?? existingQuote?.availability ?? null;
   const quoteValues = {
     request_id: repairRequest.id,
     user_id: repairRequest.user_id,
@@ -136,8 +166,8 @@ export async function recordContractorReply(
     contractor_name: contractor?.name ?? input.contractorName,
     contractor_phone: contractor?.phone ?? input.contractorPhone ?? null,
     available: parsed.available,
-    price: parsed.price,
-    availability: parsed.availability,
+    price: replyPrice,
+    availability: replyAvailability,
     raw_message: input.messageBody,
     approval_status: approvalStatus,
     approved_at: null,
@@ -147,10 +177,11 @@ export async function recordContractorReply(
       notificationId: input.notificationId ?? null,
       providerMessageId: input.providerMessageId != null ? String(input.providerMessageId) : null,
       receivedAt,
+      targetPrice,
+      counterOfferAccepted,
     },
   };
 
-  const existingQuote = await findExistingQuote(client, repairRequest, contractor, input);
   const { data: savedQuoteData } = existingQuote?.id
     ? await client.database
       .from('contractor_quotes')
@@ -171,7 +202,7 @@ export async function recordContractorReply(
     .eq('request_id', repairRequest.id);
   const quotes = Array.isArray(quoteData) ? quoteData as Array<ContractorQuote & Record<string, unknown>> : [quote];
   const quotesNeeded = Number(Deno.env.get('MIN_QUOTES_REQUIRED') ?? 3);
-  const readyForUser = quotes.length >= quotesNeeded;
+  const readyForUser = counterOfferAccepted || quotes.length >= quotesNeeded;
   const bestQuote = readyForUser ? chooseBestQuote(quotes) : null;
 
   await client.database
@@ -234,8 +265,8 @@ export async function recordContractorReply(
         body: input.messageBody,
         metadata: {
           quoteId: quote.id,
-          price: parsed.price,
-          availability: parsed.availability,
+          price: replyPrice,
+          availability: replyAvailability,
           approvalStatus,
         },
       }]);

@@ -432,6 +432,115 @@ describe('frontend InsForge integration helper', () => {
     });
   });
 
+  it('waits for a counteroffer reply and returns a fresh approval proposal', async () => {
+    const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
+    const { createRepairApi } = await import(serviceUrl);
+    const insertSelect = vi.fn().mockResolvedValue({ data: [{ id: 'counter-request-2' }], error: null });
+    const insert = vi.fn().mockReturnValue({ select: insertSelect });
+    const from = vi.fn().mockImplementation(() => ({ insert }));
+    let statusCalls = 0;
+    const invoke = vi.fn().mockImplementation((slug) => {
+      if (slug === 'status') {
+        statusCalls += 1;
+        const quote = statusCalls === 1
+          ? {
+            id: 'quote-1',
+            contractor_id: 'test-contractor',
+            contractor_name: 'Testing Contractor',
+            raw_message: 'Tomorrow 349',
+            available: true,
+            price: 349,
+            availability: 'Tomorrow',
+            approval_status: 'pending',
+            updated_at: '2026-06-07T00:21:23.399Z',
+          }
+          : {
+            id: 'quote-1',
+            contractor_id: 'test-contractor',
+            contractor_name: 'Testing Contractor',
+            raw_message: 'Yes I can',
+            available: true,
+            price: 314,
+            availability: 'Tomorrow',
+            approval_status: 'pending',
+            updated_at: '2026-06-07T00:21:37.438Z',
+          };
+
+        return Promise.resolve({
+          data: {
+            status: 'success',
+            session: {
+              requestId: 'counter-request-2',
+              status: 'pending_approval',
+              bestQuote: quote,
+              pendingApprovals: [quote],
+              quotes: [quote],
+              notifications: [],
+              messages: [],
+              jobs: [],
+            },
+          },
+          error: null,
+        });
+      }
+
+      return Promise.resolve({ data: {}, error: null });
+    });
+
+    const api = createRepairApi({
+      config: {
+        baseUrl: 'https://pzv974n7.us-east.insforge.app',
+        anonKey: 'anon',
+        useMock: false,
+        locationText: 'San Francisco, CA',
+      },
+      cryptoImpl: { randomUUID: () => 'counter-request-2' },
+      fallbackApi: {
+        analyzeVoice: vi.fn().mockResolvedValue({
+          isIdentified: true,
+          category: 'plumbing',
+          diagnosis: 'Plumbing request.',
+          messageToUser: 'I can help find plumbers.',
+          contractorSearchQuery: 'plumbing repair',
+        }),
+      },
+      insforge: {
+        auth: {
+          getCurrentUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null }),
+        },
+        database: { from },
+        functions: { invoke },
+      },
+    });
+
+    await api.analyzeVoice('Find me a plumber', 'medium');
+    const proposal = await api.waitForQuoteUpdate(
+      {
+        id: 'quote-1',
+        contractor_id: 'test-contractor',
+        contractor_name: 'Testing Contractor',
+        raw_message: 'Tomorrow 349',
+        available: true,
+        price: 349,
+        availability: 'Tomorrow',
+        approval_status: 'pending',
+        updated_at: '2026-06-07T00:21:23.399Z',
+      },
+      { id: 'test-contractor', name: 'Testing Contractor' },
+      { replyPollAttempts: 2, replyPollIntervalMs: 0, targetPrice: 314 },
+    );
+
+    expect(proposal).toEqual(expect.objectContaining({
+      quoteId: 'quote-1',
+      message: 'Testing Contractor replied: "Yes I can" Should we book?',
+      booking: expect.objectContaining({
+        negotiatedPrice: 314,
+        date: 'Tomorrow',
+      }),
+    }));
+    expect(invoke).toHaveBeenCalledWith('status', { body: { requestId: 'counter-request-2' } });
+  });
+
   it('direct-uploads storage files and stores normalized metadata before analysis', async () => {
     const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
     const { createRepairApi } = await import(serviceUrl);

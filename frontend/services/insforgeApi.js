@@ -59,6 +59,12 @@ function asNumber(value, fallback) {
   return Number.isFinite(numeric) ? numeric : fallback;
 }
 
+function optionalNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
 function normalizeContractor(contractor, index = 0) {
   const metadata = contractor?.metadata && typeof contractor.metadata === 'object'
     ? contractor.metadata
@@ -167,6 +173,27 @@ function quoteNeedsHomeownerDecision(quote) {
   return !quote?.approval_status || quote.approval_status === 'pending';
 }
 
+function quoteChangedSince(candidate, previousQuote, targetPrice = null) {
+  if (!candidate) return false;
+  if (!previousQuote) return true;
+  if (!sameQuote(candidate, previousQuote)) return false;
+
+  const candidatePrice = optionalNumber(candidate.price);
+  const previousPrice = optionalNumber(previousQuote.price);
+  const requestedPrice = optionalNumber(targetPrice);
+  if (requestedPrice !== null && candidatePrice === requestedPrice && previousPrice !== requestedPrice) return true;
+
+  if (candidatePrice !== null && candidatePrice !== previousPrice) return true;
+
+  const candidateReply = quoteReplyText(candidate);
+  const previousReply = quoteReplyText(previousQuote);
+  if (candidateReply && candidateReply !== previousReply) return true;
+
+  const candidateUpdatedAt = cleanText(candidate.updated_at);
+  const previousUpdatedAt = cleanText(previousQuote.updated_at);
+  return Boolean(candidateUpdatedAt && previousUpdatedAt && candidateUpdatedAt !== previousUpdatedAt);
+}
+
 function firstPendingApproval(session) {
   const pendingApprovals = Array.isArray(session?.pendingApprovals) ? session.pendingApprovals : [];
   const quotes = Array.isArray(session?.quotes) ? session.quotes : [];
@@ -231,8 +258,8 @@ function parseQuoteDateTime(quote, fallbackContractor = {}) {
 }
 
 function quoteToBooking(quote, fallbackContractor = {}) {
-  const quotedPrice = Number(quote?.price);
-  const negotiatedPrice = Number.isFinite(quotedPrice)
+  const quotedPrice = optionalNumber(quote?.price);
+  const negotiatedPrice = quotedPrice !== null
     ? quotedPrice
     : asNumber(fallbackContractor.negotiatedPrice, 165);
   const contractor = normalizeContractor({
@@ -1205,6 +1232,28 @@ export function createRepairApi(options = {}) {
 
     return assertSdkResult(response, 'Negotiation follow-up failed.');
   }
+
+  async function waitForQuoteUpdate(previousQuote = {}, contractor = {}, options = {}) {
+    if (!isBackendConfigured() || !activeRequestId) return null;
+
+    const selectedContractor = normalizeContractor(contractor, 0);
+    const replyPollAttempts = Math.max(1, Math.floor(options.replyPollAttempts ?? DEFAULT_REPLY_POLL_ATTEMPTS));
+    const replyPollIntervalMs = Math.max(0, Math.floor(options.replyPollIntervalMs ?? DEFAULT_REPLY_POLL_INTERVAL_MS));
+    const targetPrice = optionalNumber(options.targetPrice);
+
+    for (let attempt = 0; attempt < replyPollAttempts; attempt += 1) {
+      const status = await getRepairStatus(activeRequestId).catch(() => null);
+      const proposal = buildQuoteApprovalProposal(status, selectedContractor);
+      if (proposal && quoteChangedSince(proposal.quote, previousQuote, targetPrice)) {
+        return proposal;
+      }
+      if (attempt < replyPollAttempts - 1 && replyPollIntervalMs > 0) {
+        await sleep(replyPollIntervalMs);
+      }
+    }
+
+    return null;
+  }
   
   async function getBookings(statusFilter = null) {
     if (!isBackendConfigured()) return [];
@@ -1293,6 +1342,7 @@ export function createRepairApi(options = {}) {
     negotiateAndBook,
     finalizeBooking,
     negotiateQuote,
+    waitForQuoteUpdate,
     getRepairStatus,
     getConversations,
     getConversationMessages,
@@ -1324,6 +1374,7 @@ export const searchContractors = defaultApi.searchContractors;
 export const negotiateAndBook = defaultApi.negotiateAndBook;
 export const finalizeBooking = defaultApi.finalizeBooking;
 export const negotiateQuote = defaultApi.negotiateQuote;
+export const waitForQuoteUpdate = defaultApi.waitForQuoteUpdate;
 export const getRepairStatus = defaultApi.getRepairStatus;
 export const getConversations = defaultApi.getConversations;
 export const getConversationMessages = defaultApi.getConversationMessages;

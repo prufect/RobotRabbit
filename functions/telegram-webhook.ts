@@ -7,6 +7,15 @@ function contractorNameFromNotification(message: string | null | undefined): str
   return match?.[1]?.trim() || null;
 }
 
+function counterOfferTargetFromNotification(message: string | null | undefined): number | null {
+  const explicitTarget = message?.match(/better\s+at\s+\$?\s*(\d+(?:\.\d{1,2})?)/i);
+  if (explicitTarget) return Number(explicitTarget[1]);
+
+  const prices = [...(message ?? '').matchAll(/\$\s*(\d+(?:\.\d{1,2})?)/g)];
+  const lastPrice = prices.at(-1)?.[1];
+  return lastPrice ? Number(lastPrice) : null;
+}
+
 export default async function telegramWebhook(req: Request): Promise<Response> {
   const methodResponse = requirePost(req);
   if (methodResponse) return methodResponse;
@@ -89,6 +98,7 @@ export default async function telegramWebhook(req: Request): Promise<Response> {
       notificationId: notif.id,
       providerMessageId: telegramMessageId,
       approvalStatus: 'pending',
+      targetPrice: counterOfferTargetFromNotification(notif.message),
     });
 
     return jsonResponse({
