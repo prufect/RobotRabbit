@@ -492,30 +492,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function loadPersistedMessages() {
     try {
-      const session = await loadRecentSession();
-      if (session && session.messages && session.messages.length > 0) {
-        chatWindow.clear();
-        session.messages.forEach(msg => {
-          if (msg.role === 'system') return;
-          chatWindow.addMessage({
-            id: msg.id,
-            sender: msg.role === 'user' ? 'user' : 'agent',
-            text: msg.content,
-            imageUrl: msg.metadata?.imageUrl || null
-          });
-        });
-        
-        if (dashboard && dashboard.parentNode) {
-          dashboard.style.display = 'none';
-        }
-        chatWindow.el.style.display = 'flex';
-        
-        chatWindow.scrollToBottom();
-      } else if (session === null) {
-        chatWindow.clear();
+      chatWindow.clear(); // Always start clean
+      
+      if (dashboard && dashboard.parentNode) {
+        dashboard.style.display = 'none';
       }
+      chatWindow.el.style.display = 'flex';
+      
+      // Default to Voice Fullscreen UI
+      voiceOrb.showFullscreen();
     } catch (e) {
-      console.error("Failed to load past session:", e);
+      console.error("Failed to initialize session:", e);
     }
   }
 
@@ -1282,6 +1269,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const { transcript } = e.detail;
     if (transcript) {
       processUserInput(transcript, null, null, true);
+    }
+  });
+  
+  voiceContainer.addEventListener('voice-closed-to-keyboard', async () => {
+    voiceFirstRow.style.display = 'none';
+    inputRow.style.display = 'flex';
+    textInput.focus();
+    
+    // Add greeting if chat is empty
+    if (msgIdCounter === 0 || msgIdCounter === undefined) {
+      await wait(300);
+      await addAgentTyping();
+      chatWindow.addMessage({ 
+        id: generateId(), 
+        sender: 'agent', 
+        text: 'Hey! How can we help you today?' 
+      });
     }
   });
 });

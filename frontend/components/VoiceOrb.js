@@ -69,8 +69,14 @@ export function createVoiceOrb(container) {
     fullscreenOverlay.classList.add('hidden');
     if (isListening) voiceService.stop();
   };
+  const showFullscreen = () => {
+    fullscreenOverlay.classList.remove('hidden');
+  };
   backBtn.addEventListener('click', closeFullscreen);
-  fullscreenOverlay.querySelector('.voice-keyboard-btn').addEventListener('click', closeFullscreen);
+  fullscreenOverlay.querySelector('.voice-keyboard-btn').addEventListener('click', () => {
+    closeFullscreen();
+    wrapper.dispatchEvent(new CustomEvent('voice-closed-to-keyboard', { bubbles: true }));
+  });
   
   // Create 8 waveform bars inside waves container
   for (let i = 0; i < 8; i++) {
@@ -148,6 +154,7 @@ export function createVoiceOrb(container) {
   
   return {
     el: wrapper,
+    showFullscreen,
     update(state) {
       if (state.isProcessing) {
         orbBtn.classList.add('processing');
