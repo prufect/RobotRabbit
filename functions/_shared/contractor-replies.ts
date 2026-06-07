@@ -221,6 +221,7 @@ export async function recordContractorReply(
           last_message_at: receivedAt,
           last_message_preview: replyPreview,
           unread_count: (convRows[0] as any).unread_count ? (convRows[0] as any).unread_count + 1 : 1,
+          negotiation_status: readyForUser ? 'pending_approval' : 'active',
         })
         .eq('id', conversationId);
 

@@ -9,6 +9,8 @@ import { showContractorDetailModal } from './components/ContractorDetailModal.js
 import { createBookingConfirm } from './components/BookingConfirm.js';
 import { createMessageCenter } from './components/MessageCenter.js';
 import { createImageScanOverlay } from './components/ImageScanOverlay.js';
+import { createBottomNav } from './components/BottomNav.js';
+import { createBookingHistory } from './components/BookingHistory.js';
 
 import {
   analyzeImage,
@@ -19,6 +21,9 @@ import {
   negotiateQuote,
   getConversations,
   getConversationMessages,
+  getBookings,
+  cancelBooking,
+  rescheduleBooking,
   getCurrentUser,
   signIn,
   signUp,
@@ -176,6 +181,38 @@ document.addEventListener('DOMContentLoaded', () => {
   dragbarContainer.addEventListener('click', () => {
     bottomBar.classList.toggle('collapsed');
   });
+
+  // Booking History tab view (hidden by default)
+  const bookingHistoryView = createBookingHistory({ getBookings, cancelBooking, rescheduleBooking });
+  bookingHistoryView.el.style.display = 'none';
+  appContainer.appendChild(bookingHistoryView.el);
+
+  // Bottom Navigation Bar (Chat / Bookings / Messages tabs)
+  const bottomNav = createBottomNav({
+    onTabChange(tabId) {
+      // Hide all views
+      mainContent.style.display = 'none';
+      bottomBarWrapper.style.display = 'none';
+      bookingHistoryView.el.style.display = 'none';
+
+      if (tabId === 'chat') {
+        mainContent.style.display = '';
+        bottomBarWrapper.style.display = '';
+      } else if (tabId === 'bookings') {
+        bookingHistoryView.el.style.display = '';
+        bookingHistoryView.refresh();
+      } else if (tabId === 'messages') {
+        messageCenter.open();
+        // Switch back to chat tab since message center is an overlay
+        setTimeout(() => {
+          bottomNav.setActiveTab('chat');
+          mainContent.style.display = '';
+          bottomBarWrapper.style.display = '';
+        }, 100);
+      }
+    }
+  });
+  appContainer.appendChild(bottomNav.el);
 
   // 2. Initialize Components
   

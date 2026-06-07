@@ -973,6 +973,7 @@ export function createRepairApi(options = {}) {
               lastMessageAt: last?.at ?? conv.last_message_at,
               lastMessage: last?.body ?? conv.last_message_preview ?? '',
               unreadCount: conv.unread_count ?? 0,
+              negotiationStatus: conv.negotiation_status ?? 'active',
             };
           }),
         );
@@ -1204,6 +1205,74 @@ export function createRepairApi(options = {}) {
 
     return assertSdkResult(response, 'Negotiation follow-up failed.');
   }
+  
+  async function getBookings(statusFilter = null) {
+    if (!isBackendConfigured()) return [];
+    try {
+      const user = await requireCurrentUser().catch(() => null);
+      if (!user) return [];
+      let query = insforge.database
+        .from('bookings')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (statusFilter) {
+        query = query.eq('status', statusFilter);
+      }
+      const { data } = await query;
+      return data || [];
+    } catch { return []; }
+  }
+
+  async function cancelBooking(bookingId, reason = '') {
+    if (!isBackendConfigured() || !bookingId) throw new Error('Missing booking ID');
+    const { data } = await insforge.database
+      .from('bookings')
+      .update({ status: 'cancelled', cancel_reason: reason })
+      .eq('id', bookingId)
+      .select();
+    return data?.[0] ?? null;
+  }
+
+  async function rescheduleBooking(bookingId, newDate, newTime, note = '') {
+    if (!isBackendConfigured() || !bookingId) throw new Error('Missing booking ID');
+    const user = await requireCurrentUser();
+    // Get original booking
+    const { data: origRows } = await insforge.database
+      .from('bookings')
+      .select('*')
+      .eq('id', bookingId)
+      .single();
+    const orig = origRows;
+    if (!orig) throw new Error('Booking not found');
+    // Mark old as rescheduled
+    await insforge.database
+      .from('bookings')
+      .update({ status: 'rescheduled', reschedule_note: note })
+      .eq('id', bookingId);
+    // Create new booking
+    const bookingNumber = 'BK-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + crypto.randomUUID().slice(0,4).toUpperCase();
+    const { data: newRows } = await insforge.database
+      .from('bookings')
+      .insert([{
+        booking_number: bookingNumber,
+        user_id: user.id,
+        request_id: orig.request_id,
+        conversation_id: orig.conversation_id,
+        contractor_id: orig.contractor_id,
+        quote_id: orig.quote_id,
+        contractor_name: orig.contractor_name,
+        contractor_phone: orig.contractor_phone,
+        category: orig.category,
+        price: orig.price,
+        scheduled_date: newDate,
+        scheduled_time: newTime,
+        status: 'upcoming',
+        original_booking_id: bookingId,
+      }])
+      .select();
+    return newRows?.[0] ?? null;
+  }
 
   return {
     insforge,
@@ -1227,6 +1296,9 @@ export function createRepairApi(options = {}) {
     getRepairStatus,
     getConversations,
     getConversationMessages,
+    getBookings,
+    cancelBooking,
+    rescheduleBooking,
     loadRecentSession,
     getOrCreateActiveRequest,
     saveMessage,
@@ -1255,6 +1327,9 @@ export const negotiateQuote = defaultApi.negotiateQuote;
 export const getRepairStatus = defaultApi.getRepairStatus;
 export const getConversations = defaultApi.getConversations;
 export const getConversationMessages = defaultApi.getConversationMessages;
+export const getBookings = defaultApi.getBookings;
+export const cancelBooking = defaultApi.cancelBooking;
+export const rescheduleBooking = defaultApi.rescheduleBooking;
 export const loadRecentSession = defaultApi.loadRecentSession;
 export const getOrCreateActiveRequest = defaultApi.getOrCreateActiveRequest;
 export const saveMessage = defaultApi.saveMessage;

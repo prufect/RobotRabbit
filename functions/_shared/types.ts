@@ -121,3 +121,22 @@ export type ConversationMessageInsert = {
   body: string;
   metadata?: Record<string, unknown>;
 };
+
+export type BookingInsert = {
+  booking_number: string;
+  user_id: string;
+  request_id: string;
+  conversation_id: string | null;
+  contractor_id: string | null;
+  quote_id: string | null;
+  contractor_name: string;
+  contractor_phone: string | null;
+  category: string | null;
+  price: number | null;
+  scheduled_date: string;
+  scheduled_time: string;
+  status?: 'upcoming' | 'completed' | 'cancelled' | 'rescheduled';
+  cancel_reason?: string | null;
+  reschedule_note?: string | null;
+  original_booking_id?: string | null;
+};
