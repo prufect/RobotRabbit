@@ -119,10 +119,56 @@ export default async function finalizeBooking(req: Request): Promise<Response> {
       })
       .eq('id', body.requestId);
 
+    const bookingNumber = 'BK-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + crypto.randomUUID().slice(0,4).toUpperCase();
+
+    const { data: convRows } = await client.database
+      .from('conversations')
+      .select('id')
+      .eq('user_id', request.user_id)
+      .eq('contractor_id', body.contractorId)
+      .limit(1);
+    const conversationId = convRows?.[0]?.id ?? null;
+
+    const { data: bookingRows } = await client.database.from('bookings').insert([{
+      booking_number: bookingNumber,
+      user_id: request.user_id,
+      request_id: body.requestId,
+      conversation_id: conversationId,
+      contractor_id: body.contractorId,
+      quote_id: selectedQuote?.id ?? body.quoteId ?? null,
+      contractor_name: selectedQuote?.contractor_name ?? body.contractorId,
+      contractor_phone: selectedQuote?.contractor_phone ?? null,
+      category: request.category ?? null,
+      price: selectedQuote?.price ?? null,
+      scheduled_date: body.date,
+      scheduled_time: body.time,
+      status: 'upcoming',
+    }]).select();
+    const bookingId = bookingRows?.[0]?.id ?? null;
+
+    if (conversationId) {
+      await client.database
+        .from('conversations')
+        .update({ negotiation_status: 'booked' })
+        .eq('id', conversationId);
+
+      await client.database.from('conversation_messages').insert([{
+        conversation_id: conversationId,
+        request_id: body.requestId,
+        direction: 'outbound',
+        channel: 'insforge',
+        kind: 'booking',
+        body: `Booking confirmed for ${body.date} at ${body.time}. Booking #${bookingNumber}`,
+        metadata: { bookingId, bookingNumber, date: body.date, time: body.time, price: selectedQuote?.price ?? null },
+      }]);
+    }
+
     return jsonResponse({
       status: 'success',
       approvalStatus: selectedQuote ? 'approved' : null,
       quoteId: selectedQuote?.id ?? null,
+      bookingId,
+      bookingNumber,
     });
   } catch (error) {
     console.error('Finalize booking error:', error);

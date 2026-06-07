@@ -59,6 +59,17 @@ export function createMessageCenter({ getConversations, getConversationMessages 
   const time = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '');
   const date = (iso) => (iso ? new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '');
 
+  const statusConfig = {
+    active: { label: 'Negotiating', cls: 'mc-status-active', icon: '🟡' },
+    pending_approval: { label: 'Quote Ready', cls: 'mc-status-pending', icon: '🟠' },
+    booked: { label: 'Booked', cls: 'mc-status-booked', icon: '✅' },
+    cancelled: { label: 'Cancelled', cls: 'mc-status-cancelled', icon: '❌' },
+  };
+  function statusBadge(negotiationStatus) {
+    const s = statusConfig[negotiationStatus] ?? statusConfig.active;
+    return `<span class="mc-status-badge ${s.cls}">${s.icon} ${s.label}</span>`;
+  }
+
   function convKey(c) {
     return c.conversationId ?? c.phone ?? c.name;
   }
@@ -73,6 +84,7 @@ export function createMessageCenter({ getConversations, getConversationMessages 
       <button class="mc-conv${(c.unreadCount ?? 0) > 0 ? ' mc-conv-unread' : ''}" data-conv-id="${esc(convKey(c))}">
         <div class="mc-conv-top">
           <span class="mc-name">${esc(c.name || c.phone)}</span>
+          ${statusBadge(c.negotiationStatus)}
           <span class="mc-time">${time(c.lastMessageAt)}</span>
         </div>
         <div class="mc-preview">${esc(c.lastMessage || '')}</div>
