@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createMockAnalysis, normalizeAnalysis, parseJsonObject } from '../../functions/_shared/analysis.ts';
+import { analyzeRepairImage, normalizeAnalysis, parseJsonObject } from '../../functions/_shared/analysis.ts';
 
 describe('analysis helpers', () => {
   it('normalizes an identified model result into the repair request fields', () => {
@@ -14,6 +14,7 @@ describe('analysis helpers', () => {
 
     expect(normalized).toEqual({
       isIdentified: true,
+      confidenceScore: 100,
       status: 'identified',
       category: 'hvac',
       brand: 'Carrier',
@@ -21,6 +22,7 @@ describe('analysis helpers', () => {
       diagnosis: 'I found it.',
       nextQuestion: null,
       messageToUser: 'I found it.',
+      clarifyingQuestion: null,
       contractorSearchQuery: 'Carrier HVAC repair',
     });
   });
@@ -44,11 +46,9 @@ describe('analysis helpers', () => {
     });
   });
 
-  it('provides deterministic mock analysis for demos without model credentials', () => {
-    const mock = createMockAnalysis('https://example.com/photo.jpg');
-
-    expect(mock.isIdentified).toBe(true);
-    expect(mock.category).toBe('general');
-    expect(mock.contractorSearchQuery).toContain('home repair');
+  it('fails explicitly instead of mocking analysis without model credentials', async () => {
+    await expect(analyzeRepairImage('https://example.com/photo.jpg')).rejects.toThrow(
+      'No vision API keys configured',
+    );
   });
 });

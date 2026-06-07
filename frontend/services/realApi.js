@@ -129,7 +129,12 @@ export async function searchContractors(searchQuery, location) {
  * Yields step-by-step updates so the UI can display live activity.
  */
 export async function* negotiateAndBook(contractors, userPreferences) {
-  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  const delayFactor = Number.isFinite(Number(userPreferences?.replyDelayMs))
+    ? Number(userPreferences.replyDelayMs)
+    : 1;
+  const wait = (ms) => delayFactor <= 0
+    ? Promise.resolve()
+    : new Promise(r => setTimeout(r, ms * delayFactor));
   const topContractors = contractors.slice(0, 3);
 
   const now = Date.now();
@@ -172,14 +177,14 @@ export async function* negotiateAndBook(contractors, userPreferences) {
 
     // Simulate a reply
     const discount = Math.floor((c.originalPrice || 180) * (0.08 + Math.random() * 0.17));
-    const negotiatedPrice = (c.originalPrice || 180) - discount;
+    const firstPrice = (c.originalPrice || 180) - discount;
     const availabilityOptions = ['Today, 3:00 PM', 'Today, 5:00 PM', 'Tomorrow, 9:00 AM', 'Tomorrow, 11:00 AM', 'Today, 6:30 PM'];
     const avail = c.availability || availabilityOptions[Math.floor(Math.random() * availabilityOptions.length)];
 
     const conv = liveConversations.find(x => x.name === c.name);
     if (conv) {
         const replyTime = new Date().toISOString();
-        const msg = { id: `m_in_${i}_2`, direction: 'inbound', channel: 'sms', kind: 'reply', body: `Yes available ${avail}, my rate is $${negotiatedPrice}`, at: replyTime };
+        const msg = { id: `m_in_${i}_2`, direction: 'inbound', channel: 'sms', kind: 'reply', body: `Yes available ${avail}, my rate is $${firstPrice}`, at: replyTime };
         conv.messages.push(msg);
         conv.messageCount++;
         conv.lastMessage = msg.body;
@@ -189,9 +194,43 @@ export async function* negotiateAndBook(contractors, userPreferences) {
     yield {
       step: 'responses',
       count: i + 1,
-      message: `✅ ${c.name} replied: Available ${avail}, $${negotiatedPrice}`
+      message: `✅ ${c.name} replied: Available ${avail}, $${firstPrice}`
     };
     await wait(800 + Math.random() * 700);
+
+    const targetPrice = Math.max(85, firstPrice - Math.max(15, Math.round(firstPrice * 0.08)));
+    if (conv) {
+      const counterTime = new Date().toISOString();
+      const outbound = { id: `m_out_${i}_3`, direction: 'outbound', channel: 'sms', kind: 'negotiation', body: `The homeowner is comparing quotes. Can you do $${targetPrice}?`, at: counterTime };
+      conv.messages.push(outbound);
+      conv.messageCount++;
+      conv.lastMessage = outbound.body;
+      conv.lastMessageAt = counterTime;
+    }
+
+    yield {
+      step: 'countering',
+      count: i + 1,
+      message: `Asked ${c.name} if they can improve to $${targetPrice}.`
+    };
+    await wait(800 + Math.random() * 700);
+
+    const negotiatedPrice = Math.max(85, firstPrice - Math.max(10, Math.round(firstPrice * (0.04 + Math.random() * 0.08))));
+    if (conv) {
+      const improvedTime = new Date().toISOString();
+      const improved = { id: `m_in_${i}_4`, direction: 'inbound', channel: 'sms', kind: 'reply', body: `I can sharpen it to $${negotiatedPrice} for ${avail}.`, at: improvedTime };
+      conv.messages.push(improved);
+      conv.messageCount++;
+      conv.lastMessage = improved.body;
+      conv.lastMessageAt = improvedTime;
+    }
+
+    yield {
+      step: 'responses',
+      count: i + 1,
+      message: `${c.name} improved their quote to $${negotiatedPrice}.`
+    };
+    await wait(600 + Math.random() * 400);
 
     quotedContractors.push({
       ...c,
@@ -216,11 +255,11 @@ export async function* negotiateAndBook(contractors, userPreferences) {
       const accepted = conv.name === best.name;
       const replyTime = new Date().toISOString();
       const msg = { 
-        id: `m_out_${i}_3`, 
+        id: `m_out_${i}_5`,
         direction: 'outbound', 
         channel: 'sms', 
-        kind: accepted ? 'booking' : 'rejection', 
-        body: accepted ? `Congrats! We'd like to book you.` : `Thanks for responding — homeowner went with another provider.`, 
+        kind: accepted ? 'shortlist' : 'hold',
+        body: accepted ? `You are currently the best quote. I am checking with the homeowner before booking.` : `Thanks. The homeowner is comparing offers before choosing.`,
         at: replyTime 
       };
       conv.messages.push(msg);
@@ -236,17 +275,29 @@ export async function* negotiateAndBook(contractors, userPreferences) {
   };
   await wait(1500);
 
-  // Step 4: Booked
+  // Step 4: Homeowner approval
+  const [date, rawTime = ' 4:00 PM'] = String(best.availability).split(',');
+  const time = rawTime.trim();
   yield {
-    step: 'booked',
+    step: 'approval',
+    contractorId: best.id ?? null,
+    quote: {
+      contractor_id: best.id ?? null,
+      contractor_name: best.name,
+      price: best.negotiatedPrice,
+      availability: best.availability,
+      raw_message: `${best.name} can do ${best.availability} for $${best.negotiatedPrice}.`,
+      approval_status: 'pending',
+    },
+    message: `${best.name} is available ${date.trim()} at ${time} for $${best.negotiatedPrice}. Should we book?`,
     booking: {
       contractor: {
         ...best,
         originalPrice: best.originalPrice || 180,
       },
       negotiatedPrice: best.negotiatedPrice,
-      date: best.availability.split(',')[0],
-      time: (best.availability.split(',')[1] || ' 4:00 PM').trim(),
+      date: date.trim(),
+      time,
       agentNote: `Verified license and insurance. ${best.name} has ${best.reviewCount > 0 ? best.reviewCount + ' verified reviews' : 'a strong track record'}. Best price negotiated from ${quotedContractors.length} competing quotes.`
     }
   };
@@ -305,4 +356,3 @@ export async function analyzeVoice(transcript) {
     };
   }
 }
-

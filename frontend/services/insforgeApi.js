@@ -255,6 +255,22 @@ function quoteToBooking(quote, fallbackContractor = {}) {
   };
 }
 
+function buildCounterOfferMessage(contractor, quote = {}, options = {}) {
+  const currentPrice = Number(quote.price ?? quote.negotiatedPrice ?? contractor?.negotiatedPrice);
+  const requestedTarget = Number(options.targetPrice);
+  const targetPrice = Number.isFinite(requestedTarget)
+    ? requestedTarget
+    : Number.isFinite(currentPrice)
+      ? Math.max(75, Math.round(currentPrice * 0.9))
+      : null;
+  const availability = cleanText(quote.availability ?? contractor?.availability);
+  const currentLine = Number.isFinite(currentPrice) ? ` Your current quote is $${currentPrice}.` : '';
+  const availabilityLine = availability ? ` Availability noted: ${availability}.` : '';
+  const targetLine = targetPrice ? `$${targetPrice}` : 'a sharper price';
+
+  return `Thanks for the quick reply.${currentLine}${availabilityLine} The homeowner is comparing a few options. Can you do any better at ${targetLine}?`;
+}
+
 export function buildQuoteApprovalProposal(status, fallbackContractor = {}) {
   const session = quoteSessionFrom(status);
   const pendingQuote = firstPendingApproval(session);
@@ -1159,6 +1175,36 @@ export function createRepairApi(options = {}) {
     return assertSdkResult(response, 'Booking finalization failed.');
   }
 
+  async function negotiateQuote(contractor, quote = {}, options = {}) {
+    if (!contractor?.id) throw new Error('Choose a contractor before negotiating.');
+    if (!isBackendConfigured() || !activeRequestId) {
+      return {
+        status: 'success',
+        followUp: true,
+        message: buildCounterOfferMessage(contractor, quote, options),
+      };
+    }
+
+    const selectedContractor = normalizeContractor(contractor, 0);
+    const currentPrice = Number(quote.price ?? quote.negotiatedPrice ?? selectedContractor.negotiatedPrice);
+    const targetPrice = Number(options.targetPrice);
+    const followUpMessage = buildCounterOfferMessage(selectedContractor, quote, options);
+    const response = await insforge.functions.invoke('notify-contractors', {
+      body: {
+        requestId: activeRequestId,
+        contractorIds: [selectedContractor.id],
+        selectedContractor: contractorNotificationPayload(selectedContractor),
+        quoteId: quote.id ?? null,
+        currentPrice: Number.isFinite(currentPrice) ? currentPrice : null,
+        targetPrice: Number.isFinite(targetPrice) ? targetPrice : null,
+        availability: quote.availability ?? selectedContractor.availability ?? null,
+        followUpMessage,
+      },
+    });
+
+    return assertSdkResult(response, 'Negotiation follow-up failed.');
+  }
+
   return {
     insforge,
     isBackendConfigured,
@@ -1177,6 +1223,7 @@ export function createRepairApi(options = {}) {
     searchContractors,
     negotiateAndBook,
     finalizeBooking,
+    negotiateQuote,
     getRepairStatus,
     getConversations,
     getConversationMessages,
@@ -1204,6 +1251,7 @@ export const analyzeVoice = defaultApi.analyzeVoice;
 export const searchContractors = defaultApi.searchContractors;
 export const negotiateAndBook = defaultApi.negotiateAndBook;
 export const finalizeBooking = defaultApi.finalizeBooking;
+export const negotiateQuote = defaultApi.negotiateQuote;
 export const getRepairStatus = defaultApi.getRepairStatus;
 export const getConversations = defaultApi.getConversations;
 export const getConversationMessages = defaultApi.getConversationMessages;

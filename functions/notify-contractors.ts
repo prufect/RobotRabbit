@@ -1,6 +1,7 @@
 import { createAdminClient, createClient } from 'npm:@insforge/sdk';
 import {
   buildContractorMessage,
+  buildNegotiationFollowUpMessage,
   createMockNotification,
   createTelegramNotification,
   sendTelegramNotification,
@@ -22,6 +23,11 @@ type NotifyBody = {
   contractorId?: unknown;
   contractorIds?: unknown;
   selectedContractor?: unknown;
+  quoteId?: unknown;
+  followUpMessage?: unknown;
+  targetPrice?: unknown;
+  currentPrice?: unknown;
+  availability?: unknown;
 };
 
 type NotifiableContractor = {
@@ -61,6 +67,26 @@ function selectedContractorFromBody(value: unknown, selectedContractorId: string
     name,
     phone: typeof record.phone === 'string' && record.phone.trim() ? record.phone.trim() : null,
   };
+}
+
+function numberFromBody(value: unknown): number | null {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function followUpMessageFromBody(body: NotifyBody): string | null {
+  if (typeof body.followUpMessage === 'string' && body.followUpMessage.trim()) {
+    return body.followUpMessage.trim();
+  }
+
+  const targetPrice = numberFromBody(body.targetPrice);
+  if (!targetPrice) return null;
+
+  return buildNegotiationFollowUpMessage({
+    targetPrice,
+    currentPrice: numberFromBody(body.currentPrice),
+    availability: typeof body.availability === 'string' ? body.availability : null,
+  });
 }
 
 export default async function notifyContractors(req: Request): Promise<Response> {
@@ -128,7 +154,13 @@ export default async function notifyContractors(req: Request): Promise<Response>
     }
 
     const contractors: NotifiableContractor[] = [selectedContractor];
-    const message = buildContractorMessage(repairRequest);
+    const followUpMessage = followUpMessageFromBody(body);
+    const quoteId = typeof body.quoteId === 'string' && body.quoteId ? body.quoteId : null;
+    const message = followUpMessage ?? buildContractorMessage(repairRequest);
+    const messageKind = followUpMessage ? 'negotiation' : 'outreach';
+    const timelineContent = followUpMessage
+      ? `Asked ${selectedContractor.name} for a better price.`
+      : `Contacted ${selectedContractor.name}. Waiting for a quote.`;
 
     const twilioAccountSid = Deno.env.get('TWILIO_ACCOUNT_SID');
     const twilioAuthToken = Deno.env.get('TWILIO_AUTH_TOKEN');
@@ -272,12 +304,17 @@ export default async function notifyContractors(req: Request): Promise<Response>
         await client.database.from('conversation_messages').insert([{
           conversation_id: conversationId,
           request_id: repairRequest.id,
-          direction: 'outbound',
-          channel: matchingNotification.channel ?? 'insforge',
-          kind: 'outreach',
-          body: matchingNotification.message ?? '',
-          metadata: { contractorId: contractor.id, notificationId: matchingNotification.provider_message_id ?? null },
-        }]);
+            direction: 'outbound',
+            channel: matchingNotification.channel ?? 'insforge',
+            kind: messageKind,
+            body: matchingNotification.message ?? '',
+            metadata: {
+              contractorId: contractor.id,
+              notificationId: matchingNotification.provider_message_id ?? null,
+              quoteId,
+              followUp: Boolean(followUpMessage),
+            },
+          }]);
       }
     }
 
@@ -291,10 +328,12 @@ export default async function notifyContractors(req: Request): Promise<Response>
       user_id: repairRequest.user_id,
       role: 'assistant',
       message_type: 'notification',
-      content: `Contacted ${selectedContractor.name}. Waiting for a quote.`,
+      content: timelineContent,
       metadata: {
         contractorId: selectedContractorId,
         contractorIds,
+        quoteId,
+        followUp: Boolean(followUpMessage),
         selectedContractor: {
           id: selectedContractor.id ?? selectedContractorId,
           name: selectedContractor.name,
@@ -307,6 +346,8 @@ export default async function notifyContractors(req: Request): Promise<Response>
       status: 'success',
       notifiedCount: notifications.length,
       selectedContractorId,
+      quoteId,
+      followUp: Boolean(followUpMessage),
       errors,
     });
   } catch (error) {

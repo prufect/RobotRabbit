@@ -60,6 +60,15 @@ describe('InsForge edge function sources', () => {
     expect(source).toContain('selectedContractorId');
   });
 
+  it('supports follow-up counteroffer messages during negotiation', () => {
+    const source = readFileSync('functions/notify-contractors.ts', 'utf8');
+
+    expect(source).toContain('followUpMessage');
+    expect(source).toContain('quoteId');
+    expect(source).toContain("message_type: 'notification'");
+    expect(source).toContain("kind: messageKind");
+  });
+
   it('does not query the UUID contractors table for the local test contractor id', () => {
     const source = readFileSync('functions/notify-contractors.ts', 'utf8');
 

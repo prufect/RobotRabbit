@@ -65,4 +65,19 @@ describe('notification helpers', () => {
       last_error: null,
     });
   });
+
+  it('builds a contractor counteroffer follow-up message', () => {
+    expect(typeof notificationHelpers.buildNegotiationFollowUpMessage).toBe('function');
+
+    const message = notificationHelpers.buildNegotiationFollowUpMessage({
+      targetPrice: 250,
+      currentPrice: 300,
+      availability: 'today at 4',
+    });
+
+    expect(message).toContain('$250');
+    expect(message).toContain('$300');
+    expect(message).toContain('today at 4');
+    expect(message).toContain('Can you do any better');
+  });
 });

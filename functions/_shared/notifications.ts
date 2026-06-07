@@ -16,6 +16,22 @@ export function buildContractorMessage(
   ].join(' ');
 }
 
+export function buildNegotiationFollowUpMessage(input: {
+  targetPrice?: number | null;
+  currentPrice?: number | null;
+  availability?: string | null;
+}): string {
+  const target = typeof input.targetPrice === 'number' && Number.isFinite(input.targetPrice)
+    ? `$${input.targetPrice}`
+    : 'a sharper price';
+  const current = typeof input.currentPrice === 'number' && Number.isFinite(input.currentPrice)
+    ? ` Your current quote is $${input.currentPrice}.`
+    : '';
+  const availability = input.availability ? ` Availability noted: ${input.availability}.` : '';
+
+  return `Thanks for the quick reply.${current}${availability} The homeowner is comparing a few options. Can you do any better at ${target}?`;
+}
+
 export function createMockNotification(input: {
   requestId: string;
   userId: string;

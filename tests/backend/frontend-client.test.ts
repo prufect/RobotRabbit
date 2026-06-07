@@ -48,11 +48,12 @@ describe('frontend InsForge integration helper', () => {
     expect(() => execFileSync(process.execPath, ['--check', 'frontend/app.js'])).not.toThrow();
   });
 
-  it('waits for the homeowner to select one contractor before outreach starts', () => {
+  it('waits for the homeowner to tap contractor cards before outreach starts', () => {
     const source = readFileSync('frontend/app.js', 'utf8');
 
-    expect(source).toContain('Choose one contractor to contact.');
-    expect(source).toContain('Select a contractor above');
+    expect(source).toContain('Tap any contractor to negotiate.');
+    expect(source).toContain('You can contact more than one');
+    expect(source).toContain('contractor-selected');
     expect(source).not.toContain('startNegotiation(autoNegotiationButton);');
     expect(source).not.toContain("I'm contacting the top 3 now.");
   });
@@ -329,6 +330,106 @@ describe('frontend InsForge integration helper', () => {
     expect(source).toContain('data-action="book-quote"');
     expect(source).toContain('finalizeBooking(');
     expect(source).toContain('Should we book?');
+  });
+
+  it('does not auto-confirm legacy booked negotiation states', () => {
+    const source = readFileSync('frontend/app.js', 'utf8');
+
+    expect(source).toContain('createBookingApprovalFromBooking');
+    expect(source).not.toContain('Great news! I successfully negotiated');
+    expect(source).not.toContain('bookingConfirm.show(finalBooking)');
+  });
+
+  it('lets the homeowner contact more contractors or negotiate a quoted price', () => {
+    const source = readFileSync('frontend/app.js', 'utf8');
+
+    expect(source).toContain('data-action="contact-more-contractors"');
+    expect(source).toContain('data-action="negotiate-quote"');
+    expect(source).toContain('negotiateQuote(');
+  });
+
+  it('turns fallback multi-contractor negotiation into an approval prompt instead of booking', async () => {
+    const serviceUrl = new URL('../../frontend/services/realApi.js', import.meta.url).href;
+    const { negotiateAndBook } = await import(serviceUrl);
+    const contractors = [
+      { id: 'contractor-1', name: 'Alpha Repair', originalPrice: 420, negotiatedPrice: 390, availability: 'Today, 5:00 PM', rating: 4.9, distance: 1.1, yearsExperience: 12 },
+      { id: 'contractor-2', name: 'Beta Repair', originalPrice: 430, negotiatedPrice: 400, availability: 'Today, 6:00 PM', rating: 4.8, distance: 2.0, yearsExperience: 10 },
+    ];
+    const states = [];
+
+    for await (const state of negotiateAndBook(contractors, { replyDelayMs: 0 })) {
+      states.push(state);
+    }
+
+    expect(states.map(state => state.step)).toContain('countering');
+    expect(states.map(state => state.step)).toContain('approval');
+    expect(states.map(state => state.step)).not.toContain('booked');
+    expect(states.at(-1)).toEqual(expect.objectContaining({
+      step: 'approval',
+      message: expect.stringContaining('Should we book?'),
+      booking: expect.objectContaining({ contractor: expect.objectContaining({ name: expect.any(String) }) }),
+    }));
+  });
+
+  it('sends a counteroffer follow-up through notify-contractors', async () => {
+    const serviceUrl = new URL('../../frontend/services/insforgeApi.js', import.meta.url).href;
+    const { createRepairApi } = await import(serviceUrl);
+    const insertSelect = vi.fn().mockResolvedValue({ data: [{ id: 'counter-request-1' }], error: null });
+    const insert = vi.fn().mockReturnValue({ select: insertSelect });
+    const from = vi.fn().mockImplementation(() => ({ insert }));
+    const invoke = vi.fn().mockImplementation((slug) => {
+      if (slug === 'search-contractors') {
+        return Promise.resolve({
+          data: { status: 'success', results: [], contractorIds: [] },
+          error: null,
+        });
+      }
+      if (slug === 'notify-contractors') {
+        return Promise.resolve({ data: { status: 'success', notifiedCount: 1 }, error: null });
+      }
+      return Promise.resolve({ data: {}, error: null });
+    });
+
+    const api = createRepairApi({
+      config: {
+        baseUrl: 'https://pzv974n7.us-east.insforge.app',
+        anonKey: 'anon',
+        useMock: false,
+        locationText: 'San Francisco, CA',
+      },
+      cryptoImpl: { randomUUID: () => 'counter-request-1' },
+      fallbackApi: {
+        analyzeVoice: vi.fn().mockResolvedValue({
+          isIdentified: true,
+          category: 'painting',
+          diagnosis: 'Interior painting request.',
+          messageToUser: 'I can help find painters.',
+          contractorSearchQuery: 'painting repair',
+        }),
+      },
+      insforge: {
+        auth: {
+          getCurrentUser: vi.fn().mockResolvedValue({ data: { user: { id: 'user-1' } }, error: null }),
+        },
+        database: { from },
+        functions: { invoke },
+      },
+    });
+
+    await api.analyzeVoice('Find me painters', 'high');
+    const [selected] = await api.searchContractors('painting repair', 'San Francisco, CA');
+    await expect(api.negotiateQuote(selected, { id: 'quote-1', price: 300 }, { targetPrice: 250 }))
+      .resolves.toEqual(expect.objectContaining({ status: 'success' }));
+
+    expect(invoke).toHaveBeenCalledWith('notify-contractors', {
+      body: expect.objectContaining({
+        requestId: 'counter-request-1',
+        contractorIds: ['test-contractor'],
+        quoteId: 'quote-1',
+        followUpMessage: expect.stringContaining('$250'),
+        selectedContractor: expect.objectContaining({ id: 'test-contractor' }),
+      }),
+    });
   });
 
   it('direct-uploads storage files and stores normalized metadata before analysis', async () => {

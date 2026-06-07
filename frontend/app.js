@@ -7,7 +7,6 @@ import { createAgentActivity } from './components/AgentActivity.js';
 import { createContractorCards } from './components/ContractorCard.js';
 import { showContractorDetailModal } from './components/ContractorDetailModal.js';
 import { createBookingConfirm } from './components/BookingConfirm.js';
-import { createPriceIntel } from './components/PriceIntel.js';
 import { createMessageCenter } from './components/MessageCenter.js';
 import { createImageScanOverlay } from './components/ImageScanOverlay.js';
 
@@ -17,6 +16,7 @@ import {
   searchContractors,
   negotiateAndBook,
   finalizeBooking,
+  negotiateQuote,
   getConversations,
   getConversationMessages,
   getCurrentUser,
@@ -45,7 +45,32 @@ function escapeAttribute(value) {
     .replaceAll('>', '&gt;');
 }
 
-function createQuoteApprovalPrompt(proposal, onBook) {
+function createBookingApprovalFromBooking(booking) {
+  const contractorName = booking?.contractor?.name ?? 'The contractor';
+  const price = Number.isFinite(Number(booking?.negotiatedPrice))
+    ? `$${Number(booking.negotiatedPrice)}`
+    : 'the quoted price';
+  const date = booking?.date ?? 'the requested day';
+  const time = booking?.time ?? 'the requested time';
+
+  return {
+    step: 'approval',
+    contractorId: booking?.contractor?.id ?? null,
+    quoteId: null,
+    quote: {
+      contractor_id: booking?.contractor?.id ?? null,
+      contractor_name: contractorName,
+      price: booking?.negotiatedPrice ?? null,
+      availability: [date, time].filter(Boolean).join(', '),
+      raw_message: `${contractorName} can do ${date} at ${time} for ${price}.`,
+      approval_status: 'pending',
+    },
+    booking,
+    message: `${contractorName} can do ${date} at ${time} for ${price}. Should we book?`,
+  };
+}
+
+function createQuoteApprovalPrompt(proposal, handlers = {}) {
   const booking = proposal?.booking ?? {};
   const contractorName = booking.contractor?.name ?? 'the contractor';
   const price = Number.isFinite(Number(booking.negotiatedPrice))
@@ -75,6 +100,14 @@ function createQuoteApprovalPrompt(proposal, onBook) {
     <button class="btn-primary quote-approval-book" type="button" data-action="book-quote">
       Book ${escapeAttribute(contractorName)}
     </button>
+    <div class="quote-approval-secondary-actions">
+      <button class="quote-approval-secondary" type="button" data-action="negotiate-quote">
+        Ask for better price
+      </button>
+      <button class="quote-approval-secondary" type="button" data-action="contact-more-contractors">
+        Contact more pros
+      </button>
+    </div>
   `;
 
   card.querySelector('.quote-approval-text').textContent = proposal?.message ?? 'The contractor replied. Should we book?';
@@ -82,7 +115,13 @@ function createQuoteApprovalPrompt(proposal, onBook) {
   card.querySelector('[data-role="quote-date"]').textContent = date;
   card.querySelector('[data-role="quote-time"]').textContent = time;
   card.querySelector('[data-action="book-quote"]').addEventListener('click', (event) => {
-    onBook?.(event.currentTarget);
+    handlers.onBook?.(event.currentTarget);
+  });
+  card.querySelector('[data-action="negotiate-quote"]').addEventListener('click', (event) => {
+    handlers.onNegotiate?.(event.currentTarget);
+  });
+  card.querySelector('[data-action="contact-more-contractors"]').addEventListener('click', (event) => {
+    handlers.onContactMore?.(event.currentTarget);
   });
 
   return card;
@@ -256,6 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentUser = null;
   let authModalOverlay = null;
   let lastInputMode = 'text';
+  let activeContractorSelection = null;
   
   // Clarification state — tracks when the AI needs more info about an uploaded image
   let pendingClarification = null;
@@ -821,7 +861,7 @@ document.addEventListener('DOMContentLoaded', () => {
     activity.updateStep(searchStep, { icon: '✅', text: `Found ${contractors.length} qualified pros`, status: 'done' });
     
     await wait(800);
-    const textMsg = 'I found these highly-rated professionals nearby. Tap a contractor to start negotiating.';
+    const textMsg = 'I found these highly-rated professionals nearby. Tap any contractor to negotiate. You can contact more than one and I will compare replies before booking.';
     chatWindow.addMessage({ 
       id: generateId(), 
       sender: 'agent', 
@@ -837,6 +877,7 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Track which contractors have been negotiated (per-contractor, NOT a single boolean)
     const negotiatedContractors = new Set();
+    activeContractorSelection = { cardsContainer, contractors, negotiatedContractors };
     
     function markCardAsNegotiating(contractorId, contractorName) {
       const allCards = cardsContainer.querySelectorAll('.contractor-card');
@@ -902,7 +943,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const gen = negotiateAndBook(contractors, { urgency });
     let currentStepIdx = null;
-    let finalBooking = null;
 
     const bookApprovedQuote = async (proposal, button) => {
       if (button.dataset.busy === 'true') return;
@@ -952,6 +992,81 @@ document.addEventListener('DOMContentLoaded', () => {
         });
       }
     };
+
+    const negotiateApprovedQuote = async (proposal, button) => {
+      if (button.dataset.busy === 'true') return;
+      const booking = proposal?.booking;
+      const contractor = booking?.contractor;
+      if (!booking || !contractor) {
+        chatWindow.addMessage({ id: generateId(), sender: 'agent', text: 'I could not find the contractor quote to negotiate.' });
+        return;
+      }
+
+      const previousLabel = button.textContent;
+      const currentPrice = Number(booking.negotiatedPrice);
+      const targetPrice = Number.isFinite(currentPrice)
+        ? Math.max(75, Math.round(currentPrice * 0.9))
+        : null;
+      button.dataset.busy = 'true';
+      button.disabled = true;
+      button.textContent = 'Asking...';
+
+      const askMsg = targetPrice
+        ? `Ask ${contractor.name} if they can do $${targetPrice}.`
+        : `Ask ${contractor.name} if they can do any better.`;
+      chatWindow.addMessage({ id: generateId(), sender: 'user', text: askMsg });
+      saveMessage('user', askMsg).catch(console.error);
+
+      try {
+        await negotiateQuote(contractor, proposal.quote, { targetPrice });
+        const sentMsg = targetPrice
+          ? `I asked ${contractor.name} whether they can improve to $${targetPrice}. I will keep watching for their reply.`
+          : `I asked ${contractor.name} whether they can improve the quote. I will keep watching for their reply.`;
+        chatWindow.addMessage({ id: generateId(), sender: 'agent', text: sentMsg });
+        saveMessage('assistant', sentMsg, 'notification').catch(console.error);
+        button.textContent = 'Asked';
+        messageCenter.refresh();
+      } catch (error) {
+        button.dataset.busy = 'false';
+        button.disabled = false;
+        button.textContent = previousLabel;
+        chatWindow.addMessage({
+          id: generateId(),
+          sender: 'agent',
+          text: error.message || 'I could not send that counteroffer yet.'
+        });
+      }
+    };
+
+    const contactMoreContractors = (button) => {
+      if (button.dataset.busy === 'true') return;
+      button.dataset.busy = 'true';
+      button.textContent = 'See contractor list';
+
+      const message = activeContractorSelection?.cardsContainer
+        ? 'Tap another contractor card above and I will contact them too. I will compare replies before you book.'
+        : 'Search or tap another contractor and I will compare replies before you book.';
+      chatWindow.addMessage({ id: generateId(), sender: 'agent', text: message });
+      saveMessage('assistant', message, 'notification').catch(console.error);
+
+      const cardsContainer = activeContractorSelection?.cardsContainer;
+      if (cardsContainer) {
+        cardsContainer.classList.add('contact-more-highlight');
+        cardsContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => cardsContainer.classList.remove('contact-more-highlight'), 1600);
+      }
+    };
+
+    const renderApprovalPrompt = (proposal) => {
+      const prompt = createQuoteApprovalPrompt(proposal, {
+        onBook: (button) => bookApprovedQuote(proposal, button),
+        onNegotiate: (button) => negotiateApprovedQuote(proposal, button),
+        onContactMore: (button) => contactMoreContractors(button),
+      });
+      chatWindow.addCustomElement(prompt);
+      saveMessage('assistant', proposal.message, 'approval').catch(console.error);
+      chatWindow.scrollToBottom();
+    };
     
     try {
       for await (const state of gen) {
@@ -961,12 +1076,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (state.step === 'approval') {
           currentStepIdx = null;
-          const prompt = createQuoteApprovalPrompt(state, (button) => {
-            bookApprovedQuote(state, button);
-          });
-          chatWindow.addCustomElement(prompt);
-          saveMessage('assistant', state.message, 'approval').catch(console.error);
-          chatWindow.scrollToBottom();
+          renderApprovalPrompt(state);
+          continue;
+        }
+
+        if (state.step === 'booked') {
+          currentStepIdx = null;
+          renderApprovalPrompt(createBookingApprovalFromBooking(state.booking));
           continue;
         }
 
@@ -974,14 +1090,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (state.step === 'contacting-individual') icon = '📞';
         if (state.step === 'responses') icon = '📱';
         if (state.step === 'negotiating') icon = '🤝';
+        if (state.step === 'countering') icon = '💸';
         if (state.step === 'comparing') icon = '📊';
         if (state.step === 'waiting') icon = '⏳';
 
-        if (state.step !== 'booked') {
-          currentStepIdx = activity.addStep({ icon, text: state.message, status: 'active' });
-        } else {
-          finalBooking = state.booking;
-        }
+        currentStepIdx = activity.addStep({ icon, text: state.message, status: 'active' });
         chatWindow.scrollToBottom();
       }
     } catch (error) {
@@ -992,33 +1105,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Refresh Message Center after negotiation completes
     messageCenter.refresh();
-    
-    if (finalBooking) {
-      await wait(1000);
-      
-      // Calculate area averages to show Price Intel
-      const basePrice = finalBooking.contractor.originalPrice;
-      const areaLow = Math.floor(basePrice * 0.9);
-      const areaHigh = Math.floor(basePrice * 1.3);
-      const areaAvg = Math.floor(basePrice * 1.15);
-      
-      const priceIntelContainer = document.createElement('div');
-      createPriceIntel(priceIntelContainer, {
-        areaLow, areaHigh, areaAvg, negotiatedPrice: finalBooking.negotiatedPrice
-      });
-      chatWindow.addCustomElement(priceIntelContainer);
-      
-      const finalPriceMsg = `Great news! I successfully negotiated with ${finalBooking.contractor.name} and secured a price of $${finalBooking.negotiatedPrice}. They can be there on ${finalBooking.date} at ${finalBooking.time}. I've already verified their license and insurance.`;
-      chatWindow.addMessage({ 
-        id: generateId(), 
-        sender: 'agent', 
-        text: finalPriceMsg 
-      });
-      saveMessage('assistant', finalPriceMsg).catch(console.error);
-      
-      await wait(1000);
-      bookingConfirm.show(finalBooking);
-    }
   }
   
   // 4. Event Listeners
