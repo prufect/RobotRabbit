@@ -148,6 +148,7 @@ export function createBookingConfirm(container) {
         <div class="booking-checkmark">✅</div>
         <h2 class="booking-title">You're Booked!</h2>
         <p class="booking-subtitle">Your repair has been scheduled</p>
+        ${booking.bookingNumber ? `<div style="text-align:center;margin:-4px 0 8px;font-size:0.82rem;color:var(--text-secondary);font-weight:600;">Booking #${booking.bookingNumber}</div>` : ''}
         
         <div class="booking-details">
           <div class="booking-detail glass-subtle">
