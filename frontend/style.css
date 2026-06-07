@@ -2282,13 +2282,12 @@ body {
   box-shadow: 
     inset -25px -25px 40px rgba(0, 0, 0, 0.5),
     inset 15px 15px 30px rgba(255, 255, 255, 0.5),
-    0 0 60px rgba(189, 100, 246, 0.7),
-    0 0 120px rgba(135, 28, 247, 0.4);
+    0 0 40px rgba(189, 100, 246, 0.4);
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  animation: blob-float 10s infinite alternate ease-in-out;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
   overflow: hidden;
 }
 
@@ -2298,9 +2297,10 @@ body {
   inset: -20px;
   border-radius: 50%;
   background: conic-gradient(from 0deg, transparent 0%, rgba(255, 255, 255, 0.4) 10%, transparent 20%, rgba(230, 150, 255, 0.6) 45%, transparent 55%, rgba(255, 255, 255, 0.5) 85%, transparent 100%);
-  animation: lightning-spin 3s infinite linear;
   mix-blend-mode: overlay;
   z-index: 1;
+  opacity: 0.2;
+  transition: opacity 0.3s ease;
 }
 
 .voice-fullscreen-orb::before {
@@ -2309,10 +2309,10 @@ body {
   inset: -20px;
   border-radius: 50%;
   background: radial-gradient(circle at 50% 50%, rgba(189, 100, 246, 0.8), transparent 70%);
-  opacity: 0.6;
+  opacity: 0.3;
   filter: blur(30px);
   z-index: 0;
-  animation: pulse-active 3s infinite alternate;
+  transition: opacity 0.3s ease;
 }
 
 @keyframes lightning-spin {
@@ -2322,7 +2322,22 @@ body {
 }
 
 .voice-fullscreen-orb.listening {
-  animation: pulse-active 1.5s infinite ease-in-out;
+  box-shadow: 
+    inset -25px -25px 40px rgba(0, 0, 0, 0.5),
+    inset 15px 15px 30px rgba(255, 255, 255, 0.5),
+    0 0 60px rgba(189, 100, 246, 0.7),
+    0 0 120px rgba(135, 28, 247, 0.4);
+  animation: blob-float 3s infinite alternate ease-in-out;
+}
+
+.voice-fullscreen-orb.listening::after {
+  opacity: 1;
+  animation: lightning-spin 3s infinite linear;
+}
+
+.voice-fullscreen-orb.listening::before {
+  opacity: 0.6;
+  animation: pulse-active 3s infinite alternate;
 }
 
 .voice-fullscreen-text {
