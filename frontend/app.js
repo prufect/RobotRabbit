@@ -1,4 +1,3 @@
-import { createOnboardingSplash } from './components/OnboardingSplash.js';
 import { createChatWindow } from './components/ChatWindow.js';
 import { createVoiceOrb } from './components/VoiceOrb.js';
 import { createCameraCapture } from './components/CameraCapture.js';
@@ -364,9 +363,6 @@ document.addEventListener('DOMContentLoaded', () => {
   
   bottomBarContent.appendChild(voiceFirstRow);
   bottomBarContent.appendChild(inputRow);
-  
-  // Create Onboarding Splash
-  createOnboardingSplash(appContainer);
   
   // 3. State & Message Handling
   
@@ -1180,16 +1176,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // 4. Event Listeners
   
-  // Initial Greeting
-  appContainer.addEventListener('get-started', async () => {
-    await wait(500);
-    await addAgentTyping();
-    chatWindow.addMessage({ 
-      id: generateId(), 
-      sender: 'agent', 
-      text: 'Hi! I\'m RobotRabbit 🐰. I can help fix anything in your home. Describe the issue, or snap a photo of what\'s broken.' 
-    });
-  });
+  
 
   refreshAuthState({ requireLogin: true });
   
