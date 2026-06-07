@@ -11,6 +11,7 @@ import { createMessageCenter } from './components/MessageCenter.js';
 import { createImageScanOverlay } from './components/ImageScanOverlay.js';
 import { createBottomNav } from './components/BottomNav.js';
 import { createBookingHistory } from './components/BookingHistory.js';
+import { createVoiceService } from './services/voiceService.js';
 
 import {
   analyzeImage,
@@ -291,9 +292,87 @@ document.addEventListener('DOMContentLoaded', () => {
   const urgencyToggle = createUrgencyToggle(bottomBarContent);
   const bookingConfirm = createBookingConfirm(appContainer);
   
+  // Setup Voice First Row in Bottom Bar
+  const voiceFirstRow = document.createElement('div');
+  voiceFirstRow.className = 'voice-first-row fade-in';
+  voiceFirstRow.style.display = 'flex';
+  voiceFirstRow.style.alignItems = 'center';
+  voiceFirstRow.style.justifyContent = 'space-between';
+  voiceFirstRow.style.padding = '8px 0';
+  
+  voiceFirstRow.innerHTML = `
+    <div style="flex: 1;"></div>
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+      <button class="voice-fullscreen-mic-btn" id="default-big-mic" style="width: 72px; height: 72px; transition: transform 0.2s, box-shadow 0.2s;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 32px; height: 32px;">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+        </svg>
+      </button>
+      <div id="default-mic-status" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 8px; font-weight: 500; height: 16px;">Tap to speak</div>
+    </div>
+    <div style="flex: 1; display: flex; justify-content: flex-end; align-items: flex-end; height: 100%;">
+      <button class="icon-btn" id="voice-to-keyboard-btn" style="background: rgba(0,0,0,0.05); margin-bottom: 12px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 5h18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"/><path d="M7 15h10"/></svg>
+      </button>
+    </div>
+  `;
+  
+  const defaultBigMic = voiceFirstRow.querySelector('#default-big-mic');
+  const defaultMicStatus = voiceFirstRow.querySelector('#default-mic-status');
+  const voiceToKeyboardBtn = voiceFirstRow.querySelector('#voice-to-keyboard-btn');
+  
+  const defaultVoiceService = createVoiceService();
+  
+  defaultVoiceService.on('start', () => {
+    defaultBigMic.style.transform = 'scale(1.15)';
+    defaultBigMic.style.boxShadow = '0 0 40px rgba(155, 89, 182, 0.6)';
+    defaultMicStatus.textContent = 'Listening...';
+  });
+  
+  defaultVoiceService.on('end', () => {
+    defaultBigMic.style.transform = 'scale(1)';
+    defaultBigMic.style.boxShadow = '0 10px 30px rgba(155, 89, 182, 0.3)';
+    defaultMicStatus.textContent = 'Tap to speak';
+  });
+  
+  defaultVoiceService.on('interim', (text) => {
+    defaultMicStatus.textContent = text || 'Listening...';
+  });
+  
+  defaultVoiceService.on('result', (text) => {
+    defaultMicStatus.textContent = 'Processing...';
+    processUserInput(text, null, null, true);
+    setTimeout(() => { defaultMicStatus.textContent = 'Tap to speak'; }, 1000);
+  });
+  
+  defaultVoiceService.on('error', (err) => {
+    defaultMicStatus.textContent = err === 'not-allowed' ? 'Mic denied' : 'Try again';
+    setTimeout(() => { defaultMicStatus.textContent = 'Tap to speak'; }, 3000);
+  });
+  
+  defaultBigMic.addEventListener('click', () => {
+    if (!defaultVoiceService.isSupported()) {
+      alert('Voice not supported — try typing');
+      return;
+    }
+    if (defaultVoiceService.getIsListening()) {
+      defaultVoiceService.stop();
+    } else {
+      defaultVoiceService.start();
+    }
+  });
+  
+  voiceToKeyboardBtn.addEventListener('click', () => {
+    voiceFirstRow.style.display = 'none';
+    inputRow.style.display = 'flex';
+    textInput.focus();
+  });
+
   // Setup Input Row in Bottom Bar
   const inputRow = document.createElement('div');
   inputRow.className = 'input-row';
+  inputRow.style.display = 'none'; // Hidden by default
   
   const cameraContainer = document.createElement('div');
   const cameraCapture = createCameraCapture(cameraContainer);
@@ -320,6 +399,8 @@ document.addEventListener('DOMContentLoaded', () => {
   inputRow.appendChild(textInput);
   inputRow.appendChild(sendBtn);
   inputRow.appendChild(voiceContainer);
+  
+  bottomBarContent.appendChild(voiceFirstRow);
   bottomBarContent.appendChild(inputRow);
   
   // Create Onboarding Splash
@@ -654,6 +735,10 @@ document.addEventListener('DOMContentLoaded', () => {
     textInput.value = '';
     textInput.blur();
     toggleSendVoiceBtn(false);
+    
+    // Switch back to Voice First UI
+    inputRow.style.display = 'none';
+    voiceFirstRow.style.display = 'flex';
     
     const urgency = urgencyToggle.getLevel();
     
